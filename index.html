@@ -1,0 +1,1340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GreenShift | Build Without The Wait</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,200;0,300;0,400;0,500;1,200;1,300&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
+    
+    <!-- External Libraries: Icons & 3D Engine -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        stone: '#F4F4F0',
+                        ink: '#0A0A0A',
+                        emerald: {
+                            DEFAULT: '#00A86B',
+                            light: '#E5F6F0'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    transitionTimingFunction: {
+                        'expo': 'cubic-bezier(0.16, 1, 0.3, 1)',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #F4F4F0;
+            color: #0A0A0A;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            overflow-x: hidden;
+        }
+
+        /* --- NOISE TEXTURE --- */
+        .noise {
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            pointer-events: none; z-index: 50; opacity: 0.4;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+            mix-blend-mode: multiply;
+        }
+
+        /* --- ARCHITECTURAL LINES --- */
+        .grid-lines {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            pointer-events: none; z-index: -1;
+            display: flex; justify-content: space-between; px: 1.5rem;
+        }
+        @media (min-width: 768px) { .grid-lines { padding: 0 3rem; } }
+        @media (min-width: 1024px) { .grid-lines { padding: 0 6rem; } }
+        .grid-line {
+            width: 1px; height: 100vh; background: rgba(0, 0, 0, 0.04);
+        }
+        
+        .hairline-b { border-bottom: 1px solid rgba(0, 0, 0, 0.08); }
+        .hairline-t { border-top: 1px solid rgba(0, 0, 0, 0.08); }
+
+        /* --- MAGNETIC CURSOR --- */
+        @media (pointer: fine) {
+            body { cursor: none; }
+            a, button, input, select, textarea { cursor: none; }
+            
+            #cursor-dot {
+                position: fixed; top: 0; left: 0; width: 6px; height: 6px;
+                background: #00A86B; border-radius: 50%;
+                pointer-events: none; z-index: 10000;
+                transform: translate(-50%, -50%);
+            }
+            #cursor-ring {
+                position: fixed; top: 0; left: 0; width: 40px; height: 40px;
+                border: 1px solid rgba(10, 10, 10, 0.2); border-radius: 50%;
+                pointer-events: none; z-index: 9999;
+                transform: translate(-50%, -50%);
+                transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1), height 0.3s cubic-bezier(0.16, 1, 0.3, 1), background 0.3s ease, border-color 0.3s ease;
+                will-change: transform, width, height;
+            }
+            body.cursor-hover #cursor-ring {
+                width: 70px; height: 70px;
+                background: rgba(0, 168, 107, 0.05); border-color: #00A86B;
+            }
+            body.cursor-typing #cursor-ring {
+                width: 2px; height: 24px; border-radius: 0;
+                background: #00A86B; border-color: transparent;
+            }
+        }
+
+        /* --- CINEMATIC PRELOADER (540 -> 45) --- */
+        #preloader {
+            transition: transform 1.2s cubic-bezier(0.85, 0, 0.15, 1), opacity 0.8s ease;
+            will-change: transform;
+        }
+        #preloader.shift-up { transform: translateY(-100%); }
+
+        .ob-base {
+            transition: width 0.6s cubic-bezier(0.85, 0, 0.15, 1),
+                        transform 0.6s cubic-bezier(0.85, 0, 0.15, 1),
+                        border-color 0.2s ease, background-color 0.3s ease;
+        }
+        .ob-open { width: 140px !important; }
+        .ob-crush {
+            width: 1px !important; border-color: transparent !important;
+            background-color: #00A86B !important;
+            box-shadow: 0 0 20px 2px rgba(0, 168, 107, 0.3) !important;
+        }
+
+        /* --- SCROLL REVEAL ANIMATIONS --- */
+        .reveal {
+            opacity: 0; transform: translateY(50px);
+            transition: opacity 1.4s cubic-bezier(0.16, 1, 0.3, 1), transform 1.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .reveal.active { opacity: 1; transform: translateY(0); }
+        .delay-100 { transition-delay: 100ms; }
+        .delay-200 { transition-delay: 200ms; }
+        .delay-300 { transition-delay: 300ms; }
+
+        /* --- EDITORIAL TYPOGRAPHY & FORMS --- */
+        h1, h2, h3 { letter-spacing: -0.04em; }
+        
+        input, select, textarea {
+            background: transparent; border: none;
+            border-bottom: 1px solid rgba(10, 10, 10, 0.1);
+            color: #0A0A0A; padding: 20px 0; border-radius: 0;
+            transition: all 0.4s ease;
+        }
+        input:focus, select:focus, textarea:focus {
+            outline: none; border-color: #00A86B; box-shadow: 0 1px 0 0 #00A86B;
+        }
+        input::placeholder, textarea::placeholder {
+            color: rgba(10, 10, 10, 0.3); font-weight: 300;
+        }
+        
+        .no-select { user-select: none; -webkit-user-select: none; }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: #F4F4F0; }
+        ::-webkit-scrollbar-thumb { background: #E5E5E5; }
+        ::-webkit-scrollbar-thumb:hover { background: #00A86B; }
+
+        /* Hover underline effect */
+        .hover-underline { position: relative; }
+        .hover-underline::after {
+            content: ''; position: absolute; width: 0; height: 1px;
+            bottom: -2px; left: 0; background-color: currentColor;
+            transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .hover-underline:hover::after { width: 100%; }
+
+        /* Large Number Masking */
+        .massive-number {
+            font-size: 25vw;
+            line-height: 0.8;
+            font-weight: 200;
+            letter-spacing: -0.08em;
+            color: rgba(0, 0, 0, 0.03);
+            pointer-events: none;
+            user-select: none;
+        }
+
+        /* --- 3D MARKERS & MODAL SPECIFICS --- */
+        .marker-3d {
+            position: absolute; top: 0; left: 0;
+            background: rgba(244, 244, 240, 0.9);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(10, 10, 10, 0.1);
+            color: #0A0A0A; padding: 6px 12px;
+            font-family: 'JetBrains Mono', monospace; font-size: 9px;
+            text-transform: uppercase; letter-spacing: 0.2em;
+            border-radius: 4px; pointer-events: auto; cursor: pointer;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            transition: transform 0.1s ease-out, opacity 0.2s ease;
+            transform: translate(-50%, -50%);
+        }
+        .marker-3d::after {
+            content: ''; position: absolute; top: 100%; left: 50%;
+            transform: translateX(-50%);
+            border-width: 5px; border-style: solid;
+            border-color: rgba(244, 244, 240, 0.9) transparent transparent transparent;
+        }
+
+        /* --- ASSEMBLY GAME UI --- */
+        .game-btn {
+            opacity: 0.5; transition: all 0.3s ease; cursor: pointer; border-left: 2px solid transparent;
+        }
+        .game-btn.active {
+            opacity: 1; border-left-color: #00A86B; background: rgba(0, 168, 107, 0.05);
+        }
+        .game-btn:hover { opacity: 0.8; }
+        
+        .step-pane {
+            display: none; opacity: 0; transform: translateY(20px);
+            transition: opacity 0.5s ease, transform 0.5s ease;
+        }
+        .step-pane.active {
+            display: block; opacity: 1; transform: translateY(0);
+        }
+
+        /* --- INTERACTIVE PUZZLE STYLES --- */
+        .puzzle-piece {
+            transition: all 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+            cursor: pointer;
+        }
+        .puzzle-piece.locked {
+            transform: translate(0, 0) scale(1) !important;
+            opacity: 1;
+            pointer-events: none;
+            border-color: #00A86B;
+            background-color: rgba(0, 168, 107, 0.05);
+        }
+        .core-pulse {
+            animation: coreGlow 2s infinite alternate;
+        }
+        @keyframes coreGlow {
+            0% { box-shadow: 0 0 20px rgba(0, 168, 107, 0.2); }
+            100% { box-shadow: 0 0 50px rgba(0, 168, 107, 0.6); }
+        }
+
+        /* --- RANGE SLIDER GAME --- */
+        input[type=range] {
+            -webkit-appearance: none; width: 100%; background: transparent; padding: 0; border: none;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; height: 24px; width: 24px; border-radius: 50%;
+            background: #00A86B; cursor: pointer; margin-top: -10px;
+            box-shadow: 0 0 15px rgba(0, 168, 107, 0.5);
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%; height: 4px; cursor: pointer; background: rgba(10, 10, 10, 0.1); border-radius: 2px;
+        }
+    </style>
+</head>
+<body class="selection:bg-emerald/20 selection:text-emerald" style="overflow: hidden;">
+
+    <div class="noise"></div>
+
+    <!-- Cinematic 540->45 Preloader -->
+    <div id="preloader" class="fixed inset-0 z-[9999] bg-stone flex flex-col items-center justify-center no-select">
+        <div class="relative w-full max-w-[320px] h-[70px] flex justify-between items-center" id="preloader-numbers">
+            <div id="ob-left" class="ob-base h-full border-l border-ink/20 border-y border-ink/10 w-[140px] bg-transparent"></div>
+            <div id="ob-right" class="ob-base h-full border-r border-ink/20 border-y border-ink/10 w-[140px] bg-transparent"></div>
+            
+            <span id="o-num1" class="absolute left-1/2 -translate-x-1/2 text-3xl md:text-4xl font-light tracking-[0.2em] text-ink/40 transition-opacity duration-300 whitespace-nowrap">540 DAYS</span>
+            <span id="o-num2" class="absolute left-1/2 -translate-x-1/2 text-3xl md:text-4xl font-medium tracking-[0.1em] text-emerald opacity-0 transition-opacity duration-300 whitespace-nowrap">45 DAYS</span>
+        </div>
+        
+        <!-- Post-Number Cinematic Reveal -->
+        <div id="preloader-thought" class="absolute inset-0 flex flex-col items-center justify-center opacity-0 transition-opacity duration-800 pointer-events-none">
+            <div class="flex items-center gap-3 mb-6">
+                <div class="w-3 h-3 bg-emerald shadow-[0_0_15px_#00A86B]"></div>
+                <span class="text-sm font-medium tracking-[0.2em] uppercase text-ink">GREENSHIFT</span>
+            </div>
+            <h2 class="text-xl md:text-3xl font-light tracking-tight text-ink/70">What will you build with the time you save?</h2>
+        </div>
+    </div>
+
+    <!-- Permanent Architectural Grid Lines -->
+    <div class="grid-lines hidden lg:flex">
+        <div class="grid-line"></div>
+        <div class="grid-line"></div>
+        <div class="grid-line"></div>
+        <div class="grid-line"></div>
+    </div>
+
+    <!-- Custom Cursor -->
+    <div id="cursor-dot" class="hidden md:block"></div>
+    <div id="cursor-ring" class="hidden md:block"></div>
+
+    <!-- Navigation -->
+    <nav class="fixed top-0 w-full z-50 px-6 md:px-12 lg:px-24 py-8 transition-all duration-500 border-transparent" id="navbar">
+        <div class="max-w-[100rem] mx-auto flex justify-between items-center no-select">
+            
+            <!-- Logo -->
+            <div class="flex items-center gap-3 cursor-pointer hover-target" onclick="window.scrollTo(0,0)">
+                <div class="w-4 h-4 bg-emerald"></div>
+                <span class="text-xs font-medium tracking-[0.2em] uppercase text-ink">GREENSHIFT</span>
+            </div>
+            
+            <div class="hidden lg:flex items-center gap-12 text-[10px] uppercase tracking-[0.15em] text-ink/60 font-mono">
+                <a href="#philosophy" class="hover:text-ink hover-target transition-colors">Philosophy</a>
+                <a href="#ecosystem" class="hover:text-ink hover-target transition-colors">Ecosystem</a>
+                <a href="#timeline" class="hover:text-ink hover-target transition-colors">Timeline</a>
+                <a href="#tiers" class="hover:text-ink hover-target transition-colors">Tiers</a>
+            </div>
+
+            <a href="#initiate" class="text-[10px] uppercase tracking-[0.2em] font-medium text-ink hover-target hover-underline">
+                Initiate Project
+            </a>
+        </div>
+        <!-- Progress Bar -->
+        <div id="scroll-progress" class="fixed top-0 left-0 h-[2px] bg-emerald z-[9999] w-0 shadow-[0_0_10px_#00A86B] transition-[width] duration-100 ease-out"></div>
+    </nav>
+
+    <!-- Editorial Hero Section + 3D Mockup -->
+    <section class="min-h-[100dvh] flex flex-col justify-center px-6 md:px-12 lg:px-24 pt-32 pb-20 relative">
+        <div class="max-w-[100rem] mx-auto w-full relative z-10">
+            
+            <div class="grid lg:grid-cols-12 gap-12 items-center">
+                <div class="lg:col-span-7 reveal active delay-100">
+                    <h1 class="text-[11vw] lg:text-[7.5rem] font-light leading-[0.9] text-ink mb-8 tracking-tighter">
+                        Build your home.<br>
+                        <span class="text-ink/30 italic">Without the wait.</span>
+                    </h1>
+                    <div class="w-8 h-px bg-ink mb-8"></div>
+                    <p class="text-ink/60 font-light text-base md:text-lg leading-relaxed mb-10 max-w-lg">
+                        We transformed the industry's exhausting 18-month waiting period into a guaranteed 45-day delivery. Pre-approved financing meets precision indoor architecture.
+                    </p>
+                    <a href="#initiate" class="inline-flex items-center gap-3 text-xs font-mono uppercase tracking-[0.2em] text-emerald hover:text-ink transition-colors duration-500 hover-target group">
+                        Enter The Protocol <i data-lucide="arrow-right" class="w-4 h-4 transition-transform group-hover:translate-x-2"></i>
+                    </a>
+                </div>
+                
+                <!-- 3D Interactive WebGL Mockup & Game -->
+                <div class="lg:col-span-5 h-[500px] lg:h-[650px] relative reveal active delay-200 rounded-2xl overflow-hidden border border-ink/5 shadow-2xl bg-white/40 backdrop-blur-md cursor-grab active:cursor-grabbing">
+                    
+                    <div id="webgl-container" class="absolute inset-0"></div>
+                    <div id="webgl-markers" class="absolute inset-0 pointer-events-none overflow-hidden"></div>
+                    
+                    <!-- Assembly Game UI Overlay -->
+                    <div class="absolute top-6 left-6 font-mono text-[9px] text-emerald bg-emerald/10 px-3 py-1.5 rounded-full pointer-events-none flex items-center gap-2 border border-emerald/20">
+                        <span class="w-1.5 h-1.5 bg-emerald rounded-full animate-pulse"></span>
+                        ASSEMBLY SIMULATOR
+                    </div>
+
+                    <div class="absolute top-20 left-6 right-6 md:right-auto md:w-48 bg-stone/90 backdrop-blur-md border border-ink/10 rounded-lg p-4 pointer-events-auto">
+                        <div class="text-[9px] font-mono uppercase tracking-[0.2em] text-ink/40 mb-3 border-b border-ink/10 pb-2">Deploy Sequence</div>
+                        <div class="flex flex-col gap-1">
+                            <button onclick="setAssemblyPhase(1)" id="btn-phase-1" class="game-btn active text-left text-xs font-light text-ink py-2 px-3 hover-target">1. Foundation</button>
+                            <button onclick="setAssemblyPhase(2)" id="btn-phase-2" class="game-btn text-left text-xs font-light text-ink py-2 px-3 hover-target">2. Frame</button>
+                            <button onclick="setAssemblyPhase(3)" id="btn-phase-3" class="game-btn text-left text-xs font-light text-ink py-2 px-3 hover-target">3. Envelope</button>
+                            <button onclick="setAssemblyPhase(4)" id="btn-phase-4" class="game-btn text-left text-xs font-light text-ink py-2 px-3 hover-target">4. Show Unit</button>
+                        </div>
+                    </div>
+                    
+                    <div class="absolute bottom-6 left-6 right-6 flex justify-between items-end pointer-events-none">
+                        <div>
+                            <p class="font-mono text-[9px] text-ink/40 uppercase tracking-widest mb-1">Architecture</p>
+                            <p class="text-xs text-ink font-medium tracking-wide">Luxury Show Unit</p>
+                        </div>
+                        <div class="font-mono text-[9px] text-ink/50 bg-stone/80 px-3 py-1.5 backdrop-blur-sm border border-ink/10 rounded-full">
+                            DRAG TO EXPLORE
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+        </div>
+    </section>
+
+    <!-- NEW: The Home I Deserve (Interactive Puzzle) -->
+    <section id="philosophy" class="min-h-[100dvh] bg-ink text-stone relative overflow-hidden flex flex-col justify-center py-32 px-6 md:px-12 lg:px-24">
+        <!-- Abstract Dark Grain Background -->
+        <div class="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=2000&q=80')] bg-cover bg-center opacity-10 mix-blend-overlay"></div>
+        
+        <div class="max-w-[100rem] mx-auto w-full relative z-10">
+            
+            <div class="text-center mb-16 reveal">
+                <span class="text-[10px] font-mono text-emerald uppercase tracking-[0.3em] block mb-6 font-medium">01 — The Philosophy</span>
+                <h2 class="text-4xl md:text-6xl font-light tracking-tight leading-[1.1] mb-6 text-stone" id="puzzle-headline">
+                    The industry is <span class="italic text-stone/50">fragmented.</span>
+                </h2>
+                <p class="text-stone/60 text-base md:text-lg font-light leading-relaxed max-w-2xl mx-auto" id="puzzle-subhead">
+                    Disconnected banks, weather-dependent contractors, and siloed logistics cause 540 days of delays. Tap the scattered elements below to synchronise the system.
+                </p>
+            </div>
+
+            <!-- The Puzzle Interface -->
+            <div class="relative w-full max-w-4xl mx-auto h-[400px] md:h-[500px] reveal delay-100">
+                
+                <!-- Central Core Target -->
+                <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 border border-dashed border-stone/20 rounded-full flex flex-col items-center justify-center transition-all duration-1000" id="puzzle-core">
+                    <div class="w-2 h-2 bg-stone/20 rounded-full mb-3" id="core-dot"></div>
+                    <span class="text-[9px] font-mono uppercase tracking-widest text-stone/30 text-center px-4" id="core-text">Awaiting Synchronization</span>
+                </div>
+
+                <!-- Puzzle Piece 1: Capital -->
+                <div class="puzzle-piece absolute top-[10%] left-[10%] md:left-[20%] w-32 h-32 md:w-40 md:h-40 border border-stone/30 bg-stone/5 backdrop-blur-md rounded-xl flex flex-col items-center justify-center hover-target hover:border-emerald hover:bg-emerald/10" id="piece-1" onclick="lockPiece(1)" style="transform: translate(-30px, -30px) rotate(-10deg);">
+                    <i data-lucide="landmark" class="w-6 h-6 text-emerald mb-3"></i>
+                    <span class="text-[10px] font-mono uppercase tracking-widest text-stone">Capital</span>
+                </div>
+
+                <!-- Puzzle Piece 2: Engineering -->
+                <div class="puzzle-piece absolute top-[10%] right-[10%] md:right-[20%] w-32 h-32 md:w-40 md:h-40 border border-stone/30 bg-stone/5 backdrop-blur-md rounded-xl flex flex-col items-center justify-center hover-target hover:border-emerald hover:bg-emerald/10" id="piece-2" onclick="lockPiece(2)" style="transform: translate(40px, -20px) rotate(15deg);">
+                    <i data-lucide="cpu" class="w-6 h-6 text-emerald mb-3"></i>
+                    <span class="text-[10px] font-mono uppercase tracking-widest text-stone">Engineering</span>
+                </div>
+
+                <!-- Puzzle Piece 3: Assembly -->
+                <div class="puzzle-piece absolute bottom-[10%] left-1/2 -translate-x-1/2 w-32 h-32 md:w-40 md:h-40 border border-stone/30 bg-stone/5 backdrop-blur-md rounded-xl flex flex-col items-center justify-center hover-target hover:border-emerald hover:bg-emerald/10" id="piece-3" onclick="lockPiece(3)" style="transform: translate(0, 50px) rotate(-5deg);">
+                    <i data-lucide="box" class="w-6 h-6 text-emerald mb-3"></i>
+                    <span class="text-[10px] font-mono uppercase tracking-widest text-stone">Assembly</span>
+                </div>
+
+            </div>
+
+        </div>
+    </section>
+
+    <!-- The GreenShift Ecosystem -->
+    <section id="ecosystem" class="py-32 md:py-48 px-6 md:px-12 lg:px-24 hairline-t">
+        <div class="max-w-[100rem] mx-auto">
+            
+            <div class="mb-32 reveal">
+                <span class="text-[10px] font-mono text-ink/40 uppercase tracking-[0.3em] block mb-8">02 — The Ecosystem</span>
+                <h2 class="text-5xl md:text-7xl font-light tracking-tight text-ink">Two Pillars. One Entity.</h2>
+            </div>
+
+            <div class="grid lg:grid-cols-2 gap-px bg-ink/5 hairline-t hairline-b">
+                
+                <!-- The Capital -->
+                <div class="bg-stone p-10 md:p-16 lg:p-24 reveal group">
+                    <div class="mb-16">
+                        <h3 class="text-3xl md:text-5xl font-light text-ink mb-6">Funding Secured Upfront.</h3>
+                        <p class="text-[10px] font-mono uppercase tracking-[0.2em] text-emerald mb-8">The Capital Layer</p>
+                        <p class="text-ink/60 font-light leading-relaxed text-lg mb-12 max-w-md">
+                            No more waiting on bank approvals while your land sits empty. We ensure your project is fully funded before a single brick is laid. GreenShift secures your mortgage and construction capital instantly.
+                        </p>
+                    </div>
+                    
+                    <ul class="space-y-6 text-sm font-light text-ink border-t border-ink/10 pt-12">
+                        <li class="flex items-start gap-4">
+                            <i data-lucide="check" class="w-5 h-5 text-emerald shrink-0"></i>
+                            Pre-approved financing from day one.
+                        </li>
+                        <li class="flex items-start gap-4">
+                            <i data-lucide="check" class="w-5 h-5 text-emerald shrink-0"></i>
+                            Money flows automatically alongside construction.
+                        </li>
+                        <li class="flex items-start gap-4">
+                            <i data-lucide="check" class="w-5 h-5 text-emerald shrink-0"></i>
+                            Zero administrative friction between banks and builders.
+                        </li>
+                    </ul>
+                </div>
+
+                <!-- The Construction -->
+                <div class="bg-stone p-10 md:p-16 lg:p-24 reveal delay-100 group">
+                    <div class="mb-16">
+                        <h3 class="text-3xl md:text-5xl font-light text-ink mb-6">Precision Indoor Building.</h3>
+                        <p class="text-[10px] font-mono uppercase tracking-[0.2em] text-ink/40 mb-8">The Physical Layer</p>
+                        <p class="text-ink/60 font-light leading-relaxed text-lg mb-12 max-w-md">
+                            Building outside in the rain and mud is obsolete. Your home is meticulously crafted inside our climate-controlled facilities, guaranteeing a flawless finish and protecting your investment.
+                        </p>
+                    </div>
+                    
+                    <ul class="space-y-6 text-sm font-light text-ink border-t border-ink/10 pt-12">
+                        <li class="flex items-start gap-4">
+                            <i data-lucide="check" class="w-5 h-5 text-ink/30 shrink-0"></i>
+                            Zero weather delays. Delivered on schedule.
+                        </li>
+                        <li class="flex items-start gap-4">
+                            <i data-lucide="check" class="w-5 h-5 text-ink/30 shrink-0"></i>
+                            Flawless, factory-grade architectural quality.
+                        </li>
+                        <li class="flex items-start gap-4">
+                            <i data-lucide="check" class="w-5 h-5 text-ink/30 shrink-0"></i>
+                            Rapid, non-disruptive assembly on your property.
+                        </li>
+                    </ul>
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+    <!-- The 45-Day Timeline -->
+    <section id="timeline" class="py-32 md:py-48 px-6 md:px-12 lg:px-24 bg-ink text-stone relative">
+        <div class="max-w-[100rem] mx-auto">
+            
+            <div class="mb-32 reveal grid lg:grid-cols-12 gap-8">
+                <div class="lg:col-span-4">
+                    <span class="text-[10px] font-mono uppercase tracking-[0.3em] text-emerald block mb-4">03 — The Timeline</span>
+                </div>
+                <div class="lg:col-span-8">
+                    <h2 class="text-4xl md:text-6xl lg:text-7xl font-light tracking-tight mb-8">From Paper to Property.</h2>
+                    <p class="text-stone/50 text-lg md:text-xl font-light max-w-2xl leading-relaxed">
+                        A highly orchestrated, transparent journey designed to eliminate uncertainty and deliver your home on schedule.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Minimalist Vertical Timeline -->
+            <div class="relative border-l border-stone/10 ml-4 md:ml-8 space-y-24 pb-12">
+                
+                <!-- Step 1 -->
+                <div class="reveal relative pl-12 md:pl-24">
+                    <div class="absolute top-2 left-0 w-8 h-px bg-stone/20"></div>
+                    <div class="absolute top-0 -left-1.5 w-3 h-3 rounded-full bg-ink border border-emerald shadow-[0_0_15px_rgba(0,168,107,0.5)]"></div>
+                    <div class="grid md:grid-cols-2 gap-4 md:gap-12">
+                        <div>
+                            <h4 class="text-3xl font-light text-emerald mb-2 font-mono tracking-tighter">Day 01</h4>
+                            <h3 class="text-xl md:text-2xl font-light mb-4">Funding Secured</h3>
+                        </div>
+                        <p class="text-base text-stone/50 font-light leading-relaxed md:pt-1">Your financing is pre-approved and locked in instantly before we even touch a tool. Absolute clarity from the start.</p>
+                    </div>
+                </div>
+
+                <!-- Step 2 -->
+                <div class="reveal relative pl-12 md:pl-24">
+                    <div class="absolute top-2 left-0 w-8 h-px bg-stone/20"></div>
+                    <div class="absolute top-0 -left-1.5 w-3 h-3 rounded-full bg-ink border border-stone/20"></div>
+                    <div class="grid md:grid-cols-2 gap-4 md:gap-12">
+                        <div>
+                            <h4 class="text-3xl font-light text-stone/80 mb-2 font-mono tracking-tighter">Day 02—30</h4>
+                            <h3 class="text-xl md:text-2xl font-light mb-4">Indoor Construction</h3>
+                        </div>
+                        <p class="text-base text-stone/50 font-light leading-relaxed md:pt-1">Your home is built module-by-module in our dry, perfect-climate facility. Quality is standardized and rigorously tested.</p>
+                    </div>
+                </div>
+
+                <!-- Step 3 -->
+                <div class="reveal relative pl-12 md:pl-24">
+                    <div class="absolute top-2 left-0 w-8 h-px bg-stone/20"></div>
+                    <div class="absolute top-0 -left-1.5 w-3 h-3 rounded-full bg-ink border border-stone/20"></div>
+                    <div class="grid md:grid-cols-2 gap-4 md:gap-12">
+                        <div>
+                            <h4 class="text-3xl font-light text-stone/80 mb-2 font-mono tracking-tighter">Day 31—44</h4>
+                            <h3 class="text-xl md:text-2xl font-light mb-4">Site Assembly</h3>
+                        </div>
+                        <p class="text-base text-stone/50 font-light leading-relaxed md:pt-1">We deliver the finished modules to your land, locking them instantly into the foundation and connecting all utilities.</p>
+                    </div>
+                </div>
+
+                <!-- Step 4 -->
+                <div class="reveal relative pl-12 md:pl-24">
+                    <div class="absolute top-2 left-0 w-8 h-px bg-emerald shadow-[0_0_10px_#00A86B]"></div>
+                    <div class="absolute top-0 -left-1.5 w-3 h-3 rounded-full bg-emerald shadow-[0_0_20px_#00A86B]"></div>
+                    <div class="grid md:grid-cols-2 gap-4 md:gap-12">
+                        <div>
+                            <h4 class="text-3xl font-light text-emerald mb-2 font-mono tracking-tighter">Day 45</h4>
+                            <h3 class="text-xl md:text-2xl font-light mb-4">Welcome Home</h3>
+                        </div>
+                        <p class="text-base text-stone/50 font-light leading-relaxed md:pt-1">We hand you the keys. The exhausting traditional wait is officially over. Your life in your new home begins.</p>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+    <!-- Architectural Tiers Section -->
+    <section id="tiers" class="py-32 md:py-48 px-6 md:px-12 lg:px-24 bg-white relative">
+        <div class="max-w-[100rem] mx-auto">
+            
+            <div class="mb-24 reveal grid lg:grid-cols-12 gap-8">
+                <div class="lg:col-span-4">
+                    <span class="text-[10px] font-mono text-ink/40 uppercase tracking-[0.3em] block mb-8">04 — Deployment Scale</span>
+                </div>
+                <div class="lg:col-span-8">
+                    <h2 class="text-4xl md:text-6xl font-light tracking-tight text-ink mb-6">Architectural Tiers.</h2>
+                    <p class="text-ink/60 text-lg font-light max-w-2xl leading-relaxed">
+                        Select a deployment tier below to explore structural specifications, project ranges, and our target markets.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Tiers Grid -->
+            <div class="grid md:grid-cols-2 xl:grid-cols-4 gap-6">
+                
+                <!-- Commercial / Mid-Range -->
+                <div class="reveal border border-ink/10 bg-stone p-6 cursor-pointer hover:border-emerald transition-all duration-300 hover:shadow-2xl hover:shadow-emerald/10 group" onclick="openTierModal('commercial')">
+                    <div class="w-full h-48 bg-ink/5 mb-6 overflow-hidden relative rounded">
+                         <img src="https://images.unsplash.com/photo-1460317442991-0ec209397118?auto=format&fit=crop&w=1000&q=80" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" alt="Commercial Architecture">
+                    </div>
+                    <div class="text-[10px] font-mono uppercase tracking-[0.2em] text-emerald mb-2 font-medium">Mid-Range</div>
+                    <h3 class="text-2xl font-light text-ink mb-3">Commercial</h3>
+                    <p class="text-xs text-ink/60 leading-relaxed font-light">The equilibrium of architectural elegance and absolute modular efficiency.</p>
+                </div>
+
+                <!-- Premium / Luxury -->
+                <div class="reveal delay-100 border border-ink/10 bg-stone p-6 cursor-pointer hover:border-emerald transition-all duration-300 hover:shadow-2xl hover:shadow-emerald/10 group" onclick="openTierModal('premium')">
+                    <div class="w-full h-48 bg-ink/5 mb-6 overflow-hidden relative rounded">
+                         <img src="https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1000&q=80" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" alt="Premium Mansion">
+                    </div>
+                    <div class="text-[10px] font-mono uppercase tracking-[0.2em] text-emerald mb-2 font-medium">Luxury</div>
+                    <h3 class="text-2xl font-light text-ink mb-3">Premium</h3>
+                    <p class="text-xs text-ink/60 leading-relaxed font-light">Uncompromising luxury built with precision for high-end real estate portfolios.</p>
+                </div>
+
+                <!-- Bespoke / Avant-Garde -->
+                <div class="reveal delay-200 border border-ink/10 bg-stone p-6 cursor-pointer hover:border-emerald transition-all duration-300 hover:shadow-2xl hover:shadow-emerald/10 group" onclick="openTierModal('bespoke')">
+                    <div class="w-full h-48 bg-ink/5 mb-6 overflow-hidden relative rounded">
+                         <img src="https://images.unsplash.com/photo-1600607686527-6fb886090705?auto=format&fit=crop&w=1000&q=80" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" alt="Avant-Garde Architecture">
+                    </div>
+                    <div class="text-[10px] font-mono uppercase tracking-[0.2em] text-emerald mb-2 font-medium">Avant-Garde</div>
+                    <h3 class="text-2xl font-light text-ink mb-3">Bespoke</h3>
+                    <p class="text-xs text-ink/60 leading-relaxed font-light">Complex hybrid engineering for visionary, limit-testing structural concepts.</p>
+                </div>
+
+                <!-- Retrofit / Adaptive Reuse -->
+                <div class="reveal delay-300 border border-ink/10 bg-stone p-6 cursor-pointer hover:border-emerald transition-all duration-300 hover:shadow-2xl hover:shadow-emerald/10 group" onclick="openTierModal('retrofit')">
+                    <div class="w-full h-48 bg-ink/5 mb-6 overflow-hidden relative rounded">
+                         <img src="https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=1000&q=80" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" alt="Retrofit Workspace">
+                    </div>
+                    <div class="text-[10px] font-mono uppercase tracking-[0.2em] text-emerald mb-2 font-medium">Adaptive Reuse</div>
+                    <h3 class="text-2xl font-light text-ink mb-3">Retrofit</h3>
+                    <p class="text-xs text-ink/60 leading-relaxed font-light">Transforming existing commercial structures with zero-wet-work modular inserts.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- NEW: Initiation Modality (Time is Capital Game + CTA) -->
+    <section id="initiate" class="py-32 md:py-48 px-6 md:px-12 lg:px-24 hairline-t relative overflow-hidden bg-stone">
+        <div class="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=2000&q=80')] bg-cover bg-center opacity-20 mix-blend-multiply"></div>
+        <div class="absolute inset-0 bg-gradient-to-b from-transparent to-stone/90"></div>
+        
+        <div class="max-w-6xl mx-auto relative z-10 grid lg:grid-cols-2 gap-16 lg:gap-24 items-center">
+            
+            <div class="reveal text-left">
+                <span class="text-[10px] font-mono text-emerald uppercase tracking-[0.3em] block mb-8 font-medium">05 — Next Steps</span>
+                <h2 class="text-5xl md:text-7xl font-light tracking-tight mb-8 text-ink leading-tight">Redefine your built environment.</h2>
+                <p class="text-ink/60 text-lg font-light mb-12 max-w-lg leading-relaxed">
+                    Whether you are an individual claiming your plot or a developer looking to scale a massive portfolio, the shift is ready for you.
+                </p>
+
+                <button onclick="openInitiationModal()" class="group inline-flex items-center gap-6 bg-ink text-white px-10 py-5 text-sm font-bold uppercase tracking-[0.2em] hover:bg-emerald transition-all duration-500 shadow-xl shadow-ink/20 hover-target transform hover:-translate-y-1">
+                    Enter the Concierge <i data-lucide="chevron-right" class="w-5 h-5 transition-transform group-hover:translate-x-2"></i>
+                </button>
+            </div>
+
+            <!-- "Time is Capital" Interactive Hook -->
+            <div class="reveal delay-100 bg-white/80 backdrop-blur-xl border border-ink/10 p-8 md:p-12 shadow-2xl rounded-2xl">
+                <div class="flex items-center justify-between mb-8">
+                    <h3 class="text-2xl font-light text-ink">Time is Capital.</h3>
+                    <div class="w-2 h-2 bg-emerald rounded-full animate-pulse shadow-[0_0_10px_#00A86B]"></div>
+                </div>
+                
+                <p class="text-sm font-light text-ink/50 mb-8">Adjust the scope of your intended project to calculate the timeline shift.</p>
+                
+                <div class="mb-10">
+                    <div class="flex justify-between text-xs font-mono text-ink/40 uppercase tracking-widest mb-4">
+                        <span>Project Scope</span>
+                        <span id="scope-output" class="text-ink font-medium">500 SQM</span>
+                    </div>
+                    <input type="range" id="scope-slider" min="100" max="10000" step="100" value="500" class="hover-target" oninput="updateCalculator(this.value)">
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="border border-ink/5 bg-stone p-6 rounded-lg">
+                        <p class="text-[10px] font-mono text-ink/40 uppercase tracking-[0.2em] mb-2">Traditional Build</p>
+                        <p class="text-3xl font-light text-ink" id="trad-time">590 Days</p>
+                    </div>
+                    <div class="border border-emerald/30 bg-emerald/5 p-6 rounded-lg relative overflow-hidden">
+                        <div class="absolute top-0 right-0 w-16 h-16 bg-emerald/10 blur-xl rounded-full"></div>
+                        <p class="text-[10px] font-mono text-emerald uppercase tracking-[0.2em] mb-2 font-medium">GreenShift</p>
+                        <p class="text-3xl font-medium text-emerald" id="gs-time">47 Days</p>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </section>
+
+    <!-- Dynamic Project Tiers Modal -->
+    <div id="tier-modal" class="fixed inset-0 z-[100000] hidden items-center justify-center px-4 md:px-8 py-8 no-select opacity-0 transition-opacity duration-500">
+        <!-- Backdrop -->
+        <div class="absolute inset-0 bg-ink/80 backdrop-blur-md cursor-pointer" onclick="closeTierModal()"></div>
+        
+        <!-- Modal Card -->
+        <div class="relative w-full max-w-6xl h-full max-h-[800px] bg-white border border-ink/10 shadow-2xl rounded-xl overflow-y-auto md:overflow-hidden transform scale-95 transition-transform duration-500 flex flex-col md:flex-row" id="tier-card">
+            
+            <!-- Left: Hero Image -->
+            <div class="w-full md:w-1/2 h-64 md:h-full relative bg-stone shrink-0">
+                <img id="tier-img" src="" class="w-full h-full object-cover">
+            </div>
+            
+            <!-- Right: Content -->
+            <div class="w-full md:w-1/2 p-8 md:p-14 lg:p-16 relative flex flex-col justify-center bg-white overflow-y-auto">
+                <button onclick="closeTierModal()" class="absolute top-6 right-6 text-ink/30 hover:text-ink transition-colors hover-target p-2 bg-stone rounded-full">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+                
+                <div class="text-[10px] font-mono text-emerald uppercase tracking-[0.2em] mb-3 font-medium" id="tier-subtitle">Subtitle</div>
+                <h3 class="text-4xl md:text-5xl font-light tracking-tight text-ink mb-6" id="tier-title">Title</h3>
+                <p class="text-ink/60 font-light text-base leading-relaxed mb-10 pb-10 border-b border-ink/10" id="tier-desc">Description goes here.</p>
+                
+                <div class="space-y-8">
+                    <div>
+                        <h4 class="text-[10px] font-mono uppercase tracking-[0.2em] text-ink/40 mb-3 font-medium">Structural Specifics</h4>
+                        <p class="text-sm font-light text-ink/80 leading-relaxed" id="tier-structural">Details here</p>
+                    </div>
+                    <div class="grid grid-cols-2 gap-8">
+                        <div>
+                            <h4 class="text-[10px] font-mono uppercase tracking-[0.2em] text-ink/40 mb-3 font-medium">Project Range</h4>
+                            <p class="text-sm font-light text-ink/80" id="tier-range">Range</p>
+                        </div>
+                        <div>
+                            <h4 class="text-[10px] font-mono uppercase tracking-[0.2em] text-ink/40 mb-3 font-medium">Target Market</h4>
+                            <p class="text-sm font-light text-ink/80" id="tier-target">Target</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Concierge Modal -->
+    <div id="initiation-modal" class="fixed inset-0 z-[100000] hidden flex-col bg-stone overflow-y-auto opacity-0 transition-opacity duration-500">
+        
+        <!-- Header -->
+        <div class="sticky top-0 w-full px-6 py-6 border-b border-ink/5 bg-stone/90 backdrop-blur-md z-20 flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <div class="w-3 h-3 bg-emerald shadow-[0_0_10px_#00A86B]"></div>
+                <span class="text-[10px] font-mono uppercase tracking-[0.2em] text-ink font-medium">GreenShift Concierge</span>
+            </div>
+            <button onclick="closeInitiationModal()" class="text-ink/40 hover:text-ink transition-colors hover-target p-2">
+                <i data-lucide="x" class="w-6 h-6"></i>
+            </button>
+        </div>
+
+        <!-- Body -->
+        <div class="flex-grow flex flex-col justify-center items-center px-6 py-12">
+            <div class="w-full max-w-3xl relative">
+                
+                <!-- Step Progress -->
+                <div class="flex gap-2 mb-12">
+                    <div class="h-1 flex-1 bg-emerald rounded transition-all" id="prog-1"></div>
+                    <div class="h-1 flex-1 bg-ink/10 rounded transition-all" id="prog-2"></div>
+                    <div class="h-1 flex-1 bg-ink/10 rounded transition-all" id="prog-3"></div>
+                </div>
+
+                <!-- Step 1: Identify -->
+                <div class="step-pane active" id="step-1">
+                    <h2 class="text-4xl md:text-5xl font-light tracking-tight text-ink mb-4">Welcome. How can we help you build?</h2>
+                    <p class="text-ink/50 mb-10 font-light text-lg">Select an option below so we can tailor your experience.</p>
+                    
+                    <div class="grid md:grid-cols-3 gap-6">
+                        <div class="border border-ink/10 p-6 bg-white hover:border-emerald hover:shadow-xl transition-all cursor-pointer group" onclick="selectIntent('Individual Buyer'); goToStep(2)">
+                            <i data-lucide="home" class="w-6 h-6 text-ink/30 mb-6 group-hover:text-emerald transition-colors"></i>
+                            <h3 class="text-lg font-medium text-ink mb-2">My Own Home</h3>
+                            <p class="text-xs text-ink/50 font-light">I want to build a beautiful, stress-free home for my family.</p>
+                        </div>
+                        <div class="border border-ink/10 p-6 bg-white hover:border-emerald hover:shadow-xl transition-all cursor-pointer group" onclick="selectIntent('Real Estate Developer'); goToStep(2)">
+                            <i data-lucide="layout-grid" class="w-6 h-6 text-ink/30 mb-6 group-hover:text-emerald transition-colors"></i>
+                            <h3 class="text-lg font-medium text-ink mb-2">Multiple Units</h3>
+                            <p class="text-xs text-ink/50 font-light">I am a developer looking to build a community or estate faster.</p>
+                        </div>
+                        <div class="border border-ink/10 p-6 bg-white hover:border-emerald hover:shadow-xl transition-all cursor-pointer group" onclick="selectIntent('Business Partner'); goToStep(2)">
+                            <i data-lucide="briefcase" class="w-6 h-6 text-ink/30 mb-6 group-hover:text-emerald transition-colors"></i>
+                            <h3 class="text-lg font-medium text-ink mb-2">Business Partner</h3>
+                            <p class="text-xs text-ink/50 font-light">I represent a financial institution or government body.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 2: Location -->
+                <div class="step-pane" id="step-2">
+                    <button onclick="goToStep(1)" class="text-[10px] font-mono uppercase tracking-[0.2em] text-ink/40 hover:text-ink mb-8 flex items-center gap-2 hover-target"><i data-lucide="arrow-left" class="w-3 h-3"></i> Back</button>
+                    <h2 class="text-4xl md:text-5xl font-light tracking-tight text-ink mb-4">Where are you looking to build?</h2>
+                    <p class="text-ink/50 mb-10 font-light text-lg">We deliver across Indonesia. Let us know your target location.</p>
+                    
+                    <div class="relative mb-8">
+                        <i data-lucide="map-pin" class="absolute left-0 top-6 w-6 h-6 text-emerald"></i>
+                        <input type="text" id="site-location" class="w-full text-2xl font-light hover-target pl-10 border-b-2 border-ink/20 focus:border-emerald bg-transparent py-4" placeholder="e.g. South Jakarta, Bali..." autofocus>
+                    </div>
+                    <button onclick="goToStep(3)" class="bg-ink text-white px-8 py-4 text-xs font-bold uppercase tracking-[0.2em] hover:bg-emerald transition-colors hover-target">Confirm Location</button>
+                </div>
+
+                <!-- Step 3: Details -->
+                <div class="step-pane" id="step-3">
+                    <button onclick="goToStep(2)" class="text-[10px] font-mono uppercase tracking-[0.2em] text-ink/40 hover:text-ink mb-8 flex items-center gap-2 hover-target"><i data-lucide="arrow-left" class="w-3 h-3"></i> Back</button>
+                    <h2 class="text-4xl md:text-5xl font-light tracking-tight text-ink mb-4">Let's get to know you.</h2>
+                    <p class="text-ink/50 mb-10 font-light text-lg">Provide your details so our concierge can reach out and map your journey.</p>
+                    
+                    <form id="protocol-form" class="space-y-6">
+                        <div class="grid md:grid-cols-2 gap-6">
+                            <input type="text" id="pf-name" placeholder="Full Name" required class="w-full text-base font-light bg-white px-4 border border-ink/10 shadow-sm">
+                            <input type="email" id="pf-email" placeholder="Email Address" required class="w-full text-base font-light bg-white px-4 border border-ink/10 shadow-sm">
+                        </div>
+                        <input type="tel" id="pf-phone" placeholder="Phone Number (Optional)" class="w-full text-base font-light bg-white px-4 border border-ink/10 shadow-sm">
+                        <button type="submit" class="w-full mt-4 bg-emerald text-white px-8 py-5 text-sm font-bold uppercase tracking-[0.2em] hover:bg-ink transition-colors hover-target shadow-lg shadow-emerald/30">
+                            Request My 45-Day Plan
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Step 4: Success -->
+                <div class="step-pane text-center py-12" id="step-4">
+                    <div class="w-20 h-20 bg-emerald/10 rounded-full flex items-center justify-center mx-auto mb-8 shadow-[0_0_30px_rgba(0,168,107,0.3)]">
+                        <i data-lucide="check" class="w-10 h-10 text-emerald"></i>
+                    </div>
+                    <h2 class="text-4xl md:text-5xl font-light tracking-tight text-ink mb-4">You're on the list.</h2>
+                    <p class="text-ink/50 text-lg font-light max-w-md mx-auto mb-12">Thank you. Your details have been received. A GreenShift concierge will contact you shortly to begin your journey.</p>
+                    <button onclick="closeInitiationModal()" class="border border-ink/20 px-8 py-4 text-xs font-mono uppercase tracking-[0.2em] text-ink hover:bg-ink hover:text-white transition-colors hover-target">Return to Main Page</button>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- Studio Footer -->
+    <footer class="py-12 px-6 md:px-12 lg:px-24 bg-stone hairline-t">
+        <div class="max-w-[100rem] mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
+            <div class="flex gap-8 text-[10px] font-mono uppercase tracking-[0.2em] text-ink/40">
+                <a href="#" class="hover:text-ink transition-colors hover-target">Privacy</a>
+                <a href="#" class="hover:text-ink transition-colors hover-target">Terms</a>
+            </div>
+            <div class="flex items-center gap-4">
+                <div class="text-[10px] font-mono uppercase tracking-[0.2em] text-ink/40 text-center md:text-right">
+                    &copy; GreenShift. All Rights Reserved.
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        lucide.createIcons();
+        const safeQuery = (selector) => document.querySelector(selector);
+        const safeId = (id) => document.getElementById(id);
+
+        const WA_NUMBER = "6281997161196";
+
+        // --- Global Assembly Targets ---
+        const assemblyTargets = { frame: 15, envelope: 15, finish: 15 };
+        
+        window.setAssemblyPhase = (phase) => {
+            [1, 2, 3, 4].forEach(i => {
+                const btn = safeId(`btn-phase-${i}`);
+                if (btn) {
+                    if (i <= phase) btn.classList.add('active');
+                    else btn.classList.remove('active');
+                }
+            });
+            assemblyTargets.frame = phase >= 2 ? 0 : 15;
+            assemblyTargets.envelope = phase >= 3 ? 0 : 15;
+            assemblyTargets.finish = phase >= 4 ? 0 : 15;
+        };
+
+        // --- 1. Three.js Interactive 3D Luxury Mockup Logic ---
+        const init3D = () => {
+            const container = safeId('webgl-container');
+            const markersContainer = safeId('webgl-markers');
+            if(!container || typeof THREE === 'undefined') return;
+
+            const scene = new THREE.Scene();
+            scene.fog = new THREE.Fog(0xF4F4F0, 8, 30);
+            
+            const camera = new THREE.PerspectiveCamera(40, container.clientWidth / container.clientHeight, 0.1, 1000);
+            camera.position.set(8, 6, 10); 
+
+            const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); 
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            container.appendChild(renderer.domElement);
+
+            const controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.autoRotate = true;
+            controls.autoRotateSpeed = 0.5;
+            controls.maxDistance = 18;
+            controls.minDistance = 4;
+            controls.maxPolarAngle = Math.PI / 2 - 0.05; 
+            controls.target.set(0, 1, 0);
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+            scene.add(ambientLight);
+            
+            const dirLight = new THREE.DirectionalLight(0xffeedd, 0.9);
+            dirLight.position.set(5, 15, 7);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 2048;
+            dirLight.shadow.mapSize.height = 2048;
+            scene.add(dirLight);
+
+            const masterGroup = new THREE.Group();
+            const foundationGrp = new THREE.Group();
+            const frameGrp = new THREE.Group();
+            const envelopeGrp = new THREE.Group();
+            const finishGrp = new THREE.Group();
+
+            frameGrp.position.y = 15;
+            envelopeGrp.position.y = 15;
+            finishGrp.position.y = 15;
+
+            const floorMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.1, metalness: 0.3 }); 
+            const wallMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }); 
+            const accentMat = new THREE.MeshStandardMaterial({ color: 0x0A0A0A, roughness: 0.2 }); 
+            const emeraldMat = new THREE.MeshStandardMaterial({ color: 0x00A86B, roughness: 0.3, metalness: 0.4 }); 
+            const goldMat = new THREE.MeshStandardMaterial({ color: 0xd4af37, roughness: 0.2, metalness: 0.8 }); 
+            const glassMat = new THREE.MeshPhysicalMaterial({ 
+                color: 0xffffff, transmission: 0.9, opacity: 1, metalness: 0.1, roughness: 0.05, ior: 1.5, thickness: 0.1 
+            });
+
+            // PHASE 1: Foundation
+            const baseFloor = new THREE.Mesh(new THREE.BoxGeometry(8, 0.3, 8), floorMat);
+            baseFloor.receiveShadow = true;
+            foundationGrp.add(baseFloor);
+            
+            const rugMat = new THREE.MeshStandardMaterial({ color: 0xe5e5e5, roughness: 0.7 });
+            const rug = new THREE.Mesh(new THREE.PlaneGeometry(5, 5), rugMat);
+            rug.rotation.x = -Math.PI / 2;
+            rug.position.y = 0.16;
+            rug.receiveShadow = true;
+            foundationGrp.add(rug);
+
+            // PHASE 2: Structural Frame (BEMMELS)
+            const pillars = [[-3.8, 1.8, -3.8], [3.8, 1.8, -3.8], [-3.8, 1.8, 3.8], [3.8, 1.8, 3.8]];
+            pillars.forEach(pos => {
+                const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.3, 3.6, 0.3), emeraldMat);
+                pillar.position.set(...pos);
+                pillar.castShadow = true;
+                frameGrp.add(pillar);
+            });
+            const topBeams = [
+                { geo: [7.9, 0.3, 0.3], pos: [0, 3.75, -3.8] },
+                { geo: [7.9, 0.3, 0.3], pos: [0, 3.75, 3.8] },
+                { geo: [0.3, 0.3, 7.9], pos: [-3.8, 3.75, 0] },
+                { geo: [0.3, 0.3, 7.9], pos: [3.8, 3.75, 0] }
+            ];
+            topBeams.forEach(b => {
+                const beam = new THREE.Mesh(new THREE.BoxGeometry(...b.geo), emeraldMat);
+                beam.position.set(...b.pos);
+                beam.castShadow = true;
+                frameGrp.add(beam);
+            });
+
+            // PHASE 3: Envelope (GX-100 & Glass)
+            const backWall = new THREE.Mesh(new THREE.BoxGeometry(7.6, 3.6, 0.2), wallMat);
+            backWall.position.set(0, 1.8, -3.8);
+            backWall.castShadow = true; backWall.receiveShadow = true;
+            envelopeGrp.add(backWall);
+
+            const leftWall = new THREE.Mesh(new THREE.BoxGeometry(0.2, 3.6, 7.6), wallMat);
+            leftWall.position.set(-3.8, 1.8, 0);
+            leftWall.castShadow = true; leftWall.receiveShadow = true;
+            envelopeGrp.add(leftWall);
+
+            const glassSide1 = new THREE.Mesh(new THREE.BoxGeometry(7.6, 3.6, 0.1), glassMat);
+            glassSide1.position.set(0, 1.8, 3.8);
+            envelopeGrp.add(glassSide1);
+            
+            const glassSide2 = new THREE.Mesh(new THREE.BoxGeometry(0.1, 3.6, 7.6), glassMat);
+            glassSide2.position.set(3.8, 1.8, 0);
+            envelopeGrp.add(glassSide2);
+
+            // PHASE 4: Luxury Finishes
+            const roof = new THREE.Mesh(new THREE.BoxGeometry(8.4, 0.2, 8.4), accentMat);
+            roof.position.set(0, 4, 0);
+            roof.castShadow = true;
+            finishGrp.add(roof);
+
+            const island = new THREE.Mesh(new THREE.BoxGeometry(3, 1.2, 1.2), accentMat);
+            island.position.set(1, 0.6, -1.5);
+            island.castShadow = true; island.receiveShadow = true;
+            finishGrp.add(island);
+            const counter = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.1, 1.4), goldMat);
+            counter.position.set(1, 1.25, -1.5);
+            finishGrp.add(counter);
+
+            const artMat = new THREE.MeshStandardMaterial({ color: 0x00A86B, roughness: 0.5, metalness: 0.2 });
+            const art = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), artMat);
+            art.position.set(-3.68, 2, -1);
+            art.rotation.y = Math.PI / 2;
+            finishGrp.add(art);
+
+            masterGroup.add(foundationGrp, frameGrp, envelopeGrp, finishGrp);
+            masterGroup.position.y = -1.5;
+            scene.add(masterGroup);
+
+            const grid = new THREE.GridHelper(30, 30, 0x00A86B, 0x0A0A0A);
+            grid.material.opacity = 0.05; grid.material.transparent = true;
+            grid.position.y = -1.5;
+            scene.add(grid);
+
+            // 3D HTML Markers
+            const markers = [
+                { pos: new THREE.Vector3(1, 1.3, -1.5), label: "Monolithic Finishes" },
+                { pos: new THREE.Vector3(3.8, 1.5, 0), label: "Acoustic Glass" },
+                { pos: new THREE.Vector3(-3.68, 2, -1), label: "GX-100 Isolation" },
+                { pos: new THREE.Vector3(3.8, 3.75, 0), label: "BEMMELS Frame" }
+            ];
+
+            const markerElements = [];
+            if (markersContainer) {
+                markers.forEach(m => {
+                    const el = document.createElement('div');
+                    el.className = 'marker-3d';
+                    el.innerText = m.label;
+                    markersContainer.appendChild(el);
+                    markerElements.push({ meshPos: m.pos, el: el });
+                });
+            }
+
+            window.addEventListener('resize', () => {
+                if(!container) return;
+                camera.aspect = container.clientWidth / container.clientHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(container.clientWidth, container.clientHeight);
+            });
+
+            const animate = () => {
+                requestAnimationFrame(animate);
+                controls.update();
+
+                frameGrp.position.y += (assemblyTargets.frame - frameGrp.position.y) * 0.08;
+                envelopeGrp.position.y += (assemblyTargets.envelope - envelopeGrp.position.y) * 0.08;
+                finishGrp.position.y += (assemblyTargets.finish - finishGrp.position.y) * 0.08;
+
+                renderer.render(scene, camera);
+
+                if (markersContainer) {
+                    markerElements.forEach(marker => {
+                        if (assemblyTargets.finish > 1) {
+                            marker.el.style.opacity = 0;
+                            return;
+                        }
+
+                        const pos = marker.meshPos.clone();
+                        pos.y += -1.5; 
+                        pos.project(camera);
+
+                        if (pos.z > 1) {
+                            marker.el.style.opacity = 0;
+                        } else {
+                            const x = (pos.x * .5 + .5) * container.clientWidth;
+                            const y = (pos.y * -.5 + .5) * container.clientHeight;
+                            marker.el.style.transform = `translate(-50%, -100%) translate(${x}px, ${y - 15}px)`;
+                            marker.el.style.opacity = 1;
+                        }
+                    });
+                }
+            };
+            animate();
+        };
+
+        // --- 2. Interactive Puzzle Logic ---
+        let lockedPieces = 0;
+        window.lockPiece = (num) => {
+            const piece = safeId(`piece-${num}`);
+            if(!piece || piece.classList.contains('locked')) return;
+            
+            piece.classList.add('locked');
+            lockedPieces++;
+            
+            if(lockedPieces === 3) {
+                // Puzzle Complete!
+                setTimeout(() => {
+                    // Hide original text and core
+                    safeId('puzzle-headline').innerHTML = `The unified <span class="italic text-emerald">Shift.</span>`;
+                    safeId('puzzle-subhead').innerText = "By owning the financial routing and the precision manufacturing, GreenShift eliminates the delays of the past. The home you deserve, delivered in 45 days.";
+                    
+                    const core = safeId('puzzle-core');
+                    core.classList.remove('border-stone/20');
+                    core.classList.add('border-emerald', 'bg-emerald/5', 'core-pulse');
+                    safeId('core-dot').classList.add('bg-emerald');
+                    safeId('core-text').innerText = "System Unified";
+                    safeId('core-text').classList.add('text-emerald');
+                    
+                    // Fade out pieces to keep it clean
+                    [1,2,3].forEach(i => {
+                        safeId(`piece-${i}`).style.opacity = 0;
+                    });
+                }, 800);
+            }
+        };
+
+        // --- 3. Interactive ROI Slider Game ---
+        window.updateCalculator = (sqm) => {
+            safeId('scope-output').innerText = `${Number(sqm).toLocaleString()} SQM`;
+            // Math for generic demonstration:
+            // Traditional: 540 days base + 1 day per 10 sqm
+            // GS: 45 days base + 1 day per 100 sqm
+            let tradDays = 540 + Math.floor(sqm / 10);
+            let gsDays = 45 + Math.floor(sqm / 100);
+            
+            safeId('trad-time').innerText = `${tradDays} Days`;
+            safeId('gs-time').innerText = `${gsDays} Days`;
+        }
+
+        // --- 4. Project Tiers Modal Data & Logic ---
+        const projectTiersData = {
+            commercial: {
+                title: "Commercial",
+                subtitle: "Mid-Range Boutique",
+                image: "https://images.unsplash.com/photo-1460317442991-0ec209397118?auto=format&fit=crop&w=1500&q=80",
+                desc: "The equilibrium of architectural elegance and absolute modular efficiency. The Commercial tier allows for higher aesthetic customization while maintaining the 45-day deployment speed.",
+                structural: "Enhanced thermal isolation via GX-100 panels, customisable facade treatments, and capabilities for multi-story structural stacking.",
+                range: "50 - 500 Units",
+                target: "Boutique hotels, mid-tier developers, and eco-tourism resorts."
+            },
+            premium: {
+                title: "Premium",
+                subtitle: "Luxury Real Estate",
+                image: "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1500&q=80",
+                desc: "Uncompromising luxury built with precision. The Premium tier utilizes expansive floorplans and high-end finishes, completely disrupting how luxury real estate is delivered.",
+                structural: "Bespoke spatial engineering, premium material integration (glass, natural stone textures), and smart-home embedded grids.",
+                range: "10 - 100 Units",
+                target: "Luxury developers, private estates, and high-yield rental portfolios."
+            },
+            bespoke: {
+                title: "Bespoke",
+                subtitle: "Avant-Garde Visionary",
+                image: "https://images.unsplash.com/photo-1600607686527-6fb886090705?auto=format&fit=crop&w=1500&q=80",
+                desc: "Pushing the boundaries of the modular format. The Bespoke tier involves complex hybrid engineering for visionary, limit-testing structural concepts.",
+                structural: "Parametric hybrid design, radical material science applications, and limit-testing spans not possible with traditional methods.",
+                range: "1 - 10 Signature Builds",
+                target: "Visionary architects, landmark flagship developments, and ultra-high-net-worth clients."
+            },
+            retrofit: {
+                title: "Retrofit",
+                subtitle: "Urban Adaptive Reuse",
+                image: "https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=1500&q=80",
+                desc: "Transforming existing commercial structures into high-performance assets. Zero-wet-work modular inserts allow for rapid deployment inside operational buildings.",
+                structural: "Acoustic EPS isolation, lightweight cast acrylics, and floating modular floors designed for rapid, zero-damage integration.",
+                range: "500 - 5,000+ sqm",
+                target: "Commercial landlords, government innovation hubs, and adaptive reuse developers."
+            }
+        };
+
+        window.openTierModal = (tierKey) => {
+            const data = projectTiersData[tierKey];
+            if (!data) return;
+
+            safeId('tier-img').src = data.image;
+            safeId('tier-title').innerText = data.title;
+            safeId('tier-subtitle').innerText = data.subtitle;
+            safeId('tier-desc').innerText = data.desc;
+            safeId('tier-structural').innerText = data.structural;
+            safeId('tier-range').innerText = data.range;
+            safeId('tier-target').innerText = data.target;
+
+            const modal = safeId('tier-modal');
+            const card = safeId('tier-card');
+            
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            
+            setTimeout(() => {
+                modal.classList.remove('opacity-0');
+                card.classList.remove('scale-95');
+                card.classList.add('scale-100');
+            }, 10);
+            document.body.style.overflow = 'hidden';
+        }
+
+        window.closeTierModal = () => {
+            const modal = safeId('tier-modal');
+            const card = safeId('tier-card');
+            
+            modal.classList.add('opacity-0');
+            card.classList.remove('scale-100');
+            card.classList.add('scale-95');
+            
+            setTimeout(() => {
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+                document.body.style.overflow = '';
+            }, 500); 
+        }
+
+        // --- 5. Initiation Concierge Modality Logic (WhatsApp Routed) ---
+        let selectedIntent = "General Inquiry";
+        window.selectIntent = (intent) => { selectedIntent = intent; };
+
+        const initModal = safeId('initiation-modal');
+        window.openInitiationModal = () => {
+            if(!initModal) return;
+            initModal.classList.remove('hidden');
+            initModal.classList.add('flex');
+            setTimeout(() => {
+                initModal.classList.remove('opacity-0');
+            }, 10);
+            document.body.style.overflow = 'hidden';
+            window.goToStep(1); 
+        }
+
+        window.closeInitiationModal = () => {
+            if(!initModal) return;
+            initModal.classList.add('opacity-0');
+            setTimeout(() => {
+                initModal.classList.add('hidden');
+                initModal.classList.remove('flex');
+                document.body.style.overflow = '';
+            }, 500);
+        }
+
+        window.goToStep = (step) => {
+            document.querySelectorAll('.step-pane').forEach(el => el.classList.remove('active'));
+            const target = safeId(`step-${step}`);
+            if(target) target.classList.add('active');
+
+            if(safeId('prog-1')) safeId('prog-1').className = step >= 1 ? 'h-1 flex-1 bg-emerald rounded transition-all' : 'h-1 flex-1 bg-ink/10 rounded transition-all';
+            if(safeId('prog-2')) safeId('prog-2').className = step >= 2 ? 'h-1 flex-1 bg-emerald rounded transition-all' : 'h-1 flex-1 bg-ink/10 rounded transition-all';
+            if(safeId('prog-3')) safeId('prog-3').className = step >= 3 ? 'h-1 flex-1 bg-emerald rounded transition-all' : 'h-1 flex-1 bg-ink/10 rounded transition-all';
+        }
+
+        const protocolForm = safeId('protocol-form');
+        if(protocolForm) {
+            protocolForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                
+                const location = safeId('site-location').value;
+                const name = safeId('pf-name').value;
+                const email = safeId('pf-email').value;
+                const phone = safeId('pf-phone').value;
+
+                // WhatsApp Routing
+                const text = `Hello GreenShift Concierge, I'd like to request my 45-day plan.%0A%0A*Name:* ${name}%0A*Email:* ${email}%0A*Phone:* ${phone}%0A*Location:* ${location}%0A*Intent:* ${selectedIntent}`;
+                window.open(`https://wa.me/${WA_NUMBER}?text=${text}`, '_blank');
+                
+                window.goToStep(4);
+            });
+        }
+
+        // --- 6. Global Initialization & UI Listeners ---
+        window.addEventListener('DOMContentLoaded', () => {
+            init3D();
+
+            const preloader = safeId('preloader');
+            const preloaderNumbers = safeId('preloader-numbers');
+            const preloaderThought = safeId('preloader-thought');
+            const obLeft = safeId('ob-left');
+            const obRight = safeId('ob-right');
+            const oNum1 = safeId('o-num1');
+            const oNum2 = safeId('o-num2');
+            
+            if (preloader && obLeft && obRight && oNum1 && oNum2 && preloaderThought && preloaderNumbers) {
+                // Step 1: Crush 540
+                setTimeout(() => {
+                    obLeft.classList.add('ob-crush'); obRight.classList.add('ob-crush'); oNum1.classList.add('opacity-0');
+                }, 800);
+                // Step 2: Show 45
+                setTimeout(() => {
+                    obLeft.classList.remove('ob-crush'); obRight.classList.remove('ob-crush');
+                    obLeft.classList.add('ob-open'); obRight.classList.add('ob-open');
+                    oNum2.classList.remove('opacity-0');
+                }, 1400);
+                // Step 3: Fade numbers, show Thought Question
+                setTimeout(() => {
+                    preloaderNumbers.classList.add('opacity-0');
+                    setTimeout(() => {
+                        preloaderThought.classList.remove('opacity-0');
+                    }, 400);
+                }, 2400);
+                // Step 4: Shift up the whole preloader
+                setTimeout(() => {
+                    preloader.classList.add('shift-up'); document.body.style.overflow = ''; 
+                }, 5200); 
+                // Clean up
+                setTimeout(() => { preloader.remove(); }, 6500);
+            } else {
+                document.body.style.overflow = '';
+            }
+        });
+
+        // Scroll Reveal
+        const observerOptions = { root: null, rootMargin: '0px', threshold: 0.1 };
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) entry.target.classList.add('active');
+            });
+        }, observerOptions);
+        document.querySelectorAll('.reveal').forEach((el) => observer.observe(el));
+
+        // Scroll Progress & Navbar
+        window.addEventListener('scroll', () => {
+            const navbar = safeId('navbar');
+            const scrollProgress = safeId('scroll-progress');
+            const winScroll = document.body.scrollTop || document.documentElement.scrollTop;
+            const height = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+            
+            if (scrollProgress) scrollProgress.style.width = (winScroll / height) * 100 + "%";
+
+            if (navbar) {
+                if (winScroll > 50) {
+                    navbar.classList.add('bg-stone/90', 'backdrop-blur-xl', 'hairline-b');
+                    navbar.classList.remove('border-transparent');
+                } else {
+                    navbar.classList.remove('bg-stone/90', 'backdrop-blur-xl', 'hairline-b');
+                    navbar.classList.add('border-transparent');
+                }
+            }
+        });
+
+        // Smooth Scroll
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const targetId = this.getAttribute('href');
+                if (targetId === '#') return;
+                const targetElement = safeQuery(targetId);
+                if (targetElement) targetElement.scrollIntoView({ behavior: 'smooth' });
+            });
+        });
+
+        // Magnetic Cursor (Desktop)
+        if (window.matchMedia("(pointer: fine)").matches) {
+            const cursorDot = safeId('cursor-dot');
+            const cursorRing = safeId('cursor-ring');
+            
+            if (cursorDot && cursorRing) {
+                let mouseX = window.innerWidth / 2, mouseY = window.innerHeight / 2;
+                let ringX = mouseX, ringY = mouseY;
+
+                window.addEventListener('mousemove', (e) => {
+                    mouseX = e.clientX; mouseY = e.clientY;
+                    cursorDot.style.transform = `translate(calc(${mouseX}px - 50%), calc(${mouseY}px - 50%))`;
+                });
+
+                const render = () => {
+                    ringX += (mouseX - ringX) * 0.15;
+                    ringY += (mouseY - ringY) * 0.15;
+                    cursorRing.style.transform = `translate(calc(${ringX}px - 50%), calc(${ringY}px - 50%))`;
+                    requestAnimationFrame(render);
+                };
+                requestAnimationFrame(render);
+
+                const attachCursorEvents = () => {
+                    document.querySelectorAll('a, button, select, .hover-target, #webgl-container, .puzzle-piece').forEach(el => {
+                        el.addEventListener('mouseenter', () => document.body.classList.add('cursor-hover'));
+                        el.addEventListener('mouseleave', () => document.body.classList.remove('cursor-hover'));
+                    });
+                    document.querySelectorAll('input, textarea').forEach(el => {
+                        el.addEventListener('mouseenter', () => document.body.classList.add('cursor-typing'));
+                        el.addEventListener('mouseleave', () => document.body.classList.remove('cursor-typing'));
+                    });
+                };
+                attachCursorEvents();
+            }
+        }
+    </script>
+</body>
+</html>
