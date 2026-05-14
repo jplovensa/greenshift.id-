@@ -9,7 +9,6 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,200;0,300;0,400;0,500;1,200;1,300&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
     
-    <!-- External Libraries: Icons & 3D Engine -->
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -44,15 +43,6 @@
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
             overflow-x: hidden;
-        }
-
-        /* --- NOISE TEXTURE --- */
-        .noise {
-            position: fixed;
-            top: 0; left: 0; width: 100vw; height: 100vh;
-            pointer-events: none; z-index: 50; opacity: 0.4;
-            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
-            mix-blend-mode: multiply;
         }
 
         /* --- ARCHITECTURAL LINES --- */
@@ -193,13 +183,23 @@
 
         /* --- ASSEMBLY GAME UI --- */
         .game-btn {
-            opacity: 0.5; transition: all 0.3s ease; cursor: pointer; border-left: 2px solid transparent;
+            opacity: 0.5; transition: all 0.3s ease; cursor: pointer; 
+            border-bottom: 2px solid transparent;
+        }
+        @media (min-width: 768px) {
+            .game-btn { border-bottom: none; border-left: 2px solid transparent; }
         }
         .game-btn.active {
-            opacity: 1; border-left-color: #00A86B; background: rgba(0, 168, 107, 0.05);
+            opacity: 1; border-bottom-color: #00A86B; background: rgba(0, 168, 107, 0.05);
+        }
+        @media (min-width: 768px) {
+            .game-btn.active { border-bottom-color: transparent; border-left-color: #00A86B; }
         }
         .game-btn:hover { opacity: 0.8; }
         
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
         .step-pane {
             display: none; opacity: 0; transform: translateY(20px);
             transition: opacity 0.5s ease, transform 0.5s ease;
@@ -208,24 +208,26 @@
             display: block; opacity: 1; transform: translateY(0);
         }
 
-        /* --- INTERACTIVE PUZZLE STYLES --- */
-        .puzzle-piece {
-            transition: all 0.8s cubic-bezier(0.22, 1, 0.36, 1);
-            cursor: pointer;
+        /* --- AUTOMATED PUZZLE STORY ANIMATION --- */
+        .puzzle-piece-auto {
+            position: absolute;
+            transition: all 1.2s cubic-bezier(0.22, 1, 0.36, 1);
         }
-        .puzzle-piece.locked {
-            transform: translate(0, 0) scale(1) !important;
-            opacity: 1;
-            pointer-events: none;
-            border-color: #00A86B;
-            background-color: rgba(0, 168, 107, 0.05);
+        .puzzle-container.assembled .puzzle-piece-auto {
+            top: 50% !important;
+            left: 50% !important;
+            right: auto !important;
+            bottom: auto !important;
+            transform: translate(-50%, -50%) scale(0.5) !important;
+            opacity: 0 !important;
         }
-        .core-pulse {
-            animation: coreGlow 2s infinite alternate;
+        .puzzle-container.assembled #puzzle-core {
+            border-color: #00A86B !important;
+            background-color: rgba(0, 168, 107, 0.05) !important;
+            box-shadow: 0 0 50px rgba(0, 168, 107, 0.4);
         }
-        @keyframes coreGlow {
-            0% { box-shadow: 0 0 20px rgba(0, 168, 107, 0.2); }
-            100% { box-shadow: 0 0 50px rgba(0, 168, 107, 0.6); }
+        .puzzle-container.assembled #core-dot {
+            background-color: #00A86B !important;
         }
 
         /* --- RANGE SLIDER GAME --- */
@@ -240,15 +242,21 @@
         input[type=range]::-webkit-slider-runnable-track {
             width: 100%; height: 4px; cursor: pointer; background: rgba(10, 10, 10, 0.1); border-radius: 2px;
         }
+
+        /* --- SHINE ANIMATION --- */
+        .animate-shine {
+            animation: shineSweep 1.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+        }
+        @keyframes shineSweep {
+            0% { transform: translateX(-150%) skewX(-20deg); }
+            100% { transform: translateX(150%) skewX(-20deg); }
+        }
     </style>
 </head>
 <body class="selection:bg-emerald/20 selection:text-emerald" style="overflow: hidden;">
 
-    <div class="noise"></div>
-
-    <!-- Cinematic 540->45 Preloader -->
     <div id="preloader" class="fixed inset-0 z-[9999] bg-stone flex flex-col items-center justify-center no-select">
-        <div class="relative w-full max-w-[320px] h-[70px] flex justify-between items-center" id="preloader-numbers">
+        <div class="relative w-full max-w-[320px] h-[70px] flex justify-between items-center transition-opacity duration-500" id="preloader-numbers">
             <div id="ob-left" class="ob-base h-full border-l border-ink/20 border-y border-ink/10 w-[140px] bg-transparent"></div>
             <div id="ob-right" class="ob-base h-full border-r border-ink/20 border-y border-ink/10 w-[140px] bg-transparent"></div>
             
@@ -256,17 +264,30 @@
             <span id="o-num2" class="absolute left-1/2 -translate-x-1/2 text-3xl md:text-4xl font-medium tracking-[0.1em] text-emerald opacity-0 transition-opacity duration-300 whitespace-nowrap">45 DAYS</span>
         </div>
         
-        <!-- Post-Number Cinematic Reveal -->
         <div id="preloader-thought" class="absolute inset-0 flex flex-col items-center justify-center opacity-0 transition-opacity duration-800 pointer-events-none">
-            <div class="flex items-center gap-3 mb-6">
-                <div class="w-3 h-3 bg-emerald shadow-[0_0_15px_#00A86B]"></div>
-                <span class="text-sm font-medium tracking-[0.2em] uppercase text-ink">GREENSHIFT</span>
+            <h2 class="text-xl md:text-3xl font-light tracking-tight text-ink/80 text-center px-6">What will you build with the time you save?</h2>
+        </div>
+
+        <div id="preloader-logo" class="absolute inset-0 flex flex-col items-center justify-center opacity-0 transition-opacity duration-800 pointer-events-none">
+            <div class="flex flex-col items-center gap-4 relative py-2 px-4">
+                <div class="flex items-center gap-4 relative overflow-hidden pb-1">
+                    <div class="w-5 h-5 bg-emerald shadow-[0_0_20px_#00A86B]"></div>
+                    <span class="text-2xl md:text-3xl font-medium tracking-[0.2em] uppercase text-ink">GREENSHIFT</span>
+                    <div id="shine-element" class="absolute top-0 left-0 w-full h-full bg-gradient-to-r from-transparent via-white to-transparent opacity-90" style="transform: translateX(-150%) skewX(-20deg);"></div>
+                </div>
+                <div class="flex items-center gap-3 opacity-90 mt-2">
+                    <span class="text-[10px] font-mono text-ink/50 uppercase tracking-widest mt-1">by</span>
+                    <svg viewBox="0 0 450 120" fill="none" xmlns="http://www.w3.org/2000/svg" class="h-6 md:h-8 w-auto">
+                        <path d="M10 60 L100 15 L180 50 L155 65 L100 35 L40 65 Z" fill="#4AD9AA"/>
+                        <path d="M55 75 L100 50 L125 90 L165 70 L120 115 Z" fill="#3E8678"/>
+                        <text x="200" y="60" font-family="'Inter', sans-serif" font-weight="900" font-size="60" fill="#4AD9AA" letter-spacing="1">FJÄLL</text>
+                        <text x="205" y="110" font-family="'Inter', sans-serif" font-weight="300" font-size="52" fill="#3E8678" letter-spacing="1">GROUP</text>
+                    </svg>
+                </div>
             </div>
-            <h2 class="text-xl md:text-3xl font-light tracking-tight text-ink/70">What will you build with the time you save?</h2>
         </div>
     </div>
 
-    <!-- Permanent Architectural Grid Lines -->
     <div class="grid-lines hidden lg:flex">
         <div class="grid-line"></div>
         <div class="grid-line"></div>
@@ -274,18 +295,26 @@
         <div class="grid-line"></div>
     </div>
 
-    <!-- Custom Cursor -->
     <div id="cursor-dot" class="hidden md:block"></div>
     <div id="cursor-ring" class="hidden md:block"></div>
 
-    <!-- Navigation -->
     <nav class="fixed top-0 w-full z-50 px-6 md:px-12 lg:px-24 py-8 transition-all duration-500 border-transparent" id="navbar">
         <div class="max-w-[100rem] mx-auto flex justify-between items-center no-select">
             
-            <!-- Logo -->
-            <div class="flex items-center gap-3 cursor-pointer hover-target" onclick="window.scrollTo(0,0)">
-                <div class="w-4 h-4 bg-emerald"></div>
-                <span class="text-xs font-medium tracking-[0.2em] uppercase text-ink">GREENSHIFT</span>
+            <div class="flex items-center gap-4 cursor-pointer hover-target" onclick="window.scrollTo(0,0)">
+                <div class="flex items-center gap-3 md:border-r border-ink/10 md:pr-4">
+                    <div class="w-4 h-4 bg-emerald"></div>
+                    <span class="text-xs font-medium tracking-[0.2em] uppercase text-ink">GREENSHIFT</span>
+                </div>
+                <div class="hidden md:flex items-center gap-2 pl-2 opacity-90">
+                    <span class="text-[9px] font-mono text-ink/40 uppercase tracking-widest mt-1">by</span>
+                    <svg viewBox="0 0 450 120" fill="none" xmlns="http://www.w3.org/2000/svg" class="h-4 md:h-5 w-auto">
+                        <path d="M10 60 L100 15 L180 50 L155 65 L100 35 L40 65 Z" fill="#4AD9AA"/>
+                        <path d="M55 75 L100 50 L125 90 L165 70 L120 115 Z" fill="#3E8678"/>
+                        <text x="200" y="60" font-family="'Inter', sans-serif" font-weight="900" font-size="60" fill="#4AD9AA" letter-spacing="1">FJÄLL</text>
+                        <text x="205" y="110" font-family="'Inter', sans-serif" font-weight="300" font-size="52" fill="#3E8678" letter-spacing="1">GROUP</text>
+                    </svg>
+                </div>
             </div>
             
             <div class="hidden lg:flex items-center gap-12 text-[10px] uppercase tracking-[0.15em] text-ink/60 font-mono">
@@ -299,11 +328,9 @@
                 Initiate Project
             </a>
         </div>
-        <!-- Progress Bar -->
         <div id="scroll-progress" class="fixed top-0 left-0 h-[2px] bg-emerald z-[9999] w-0 shadow-[0_0_10px_#00A86B] transition-[width] duration-100 ease-out"></div>
     </nav>
 
-    <!-- Editorial Hero Section + 3D Mockup -->
     <section class="min-h-[100dvh] flex flex-col justify-center px-6 md:px-12 lg:px-24 pt-32 pb-20 relative">
         <div class="max-w-[100rem] mx-auto w-full relative z-10">
             
@@ -322,34 +349,32 @@
                     </a>
                 </div>
                 
-                <!-- 3D Interactive WebGL Mockup & Game -->
                 <div class="lg:col-span-5 h-[500px] lg:h-[650px] relative reveal active delay-200 rounded-2xl overflow-hidden border border-ink/5 shadow-2xl bg-white/40 backdrop-blur-md cursor-grab active:cursor-grabbing">
                     
                     <div id="webgl-container" class="absolute inset-0"></div>
                     <div id="webgl-markers" class="absolute inset-0 pointer-events-none overflow-hidden"></div>
                     
-                    <!-- Assembly Game UI Overlay -->
-                    <div class="absolute top-6 left-6 font-mono text-[9px] text-emerald bg-emerald/10 px-3 py-1.5 rounded-full pointer-events-none flex items-center gap-2 border border-emerald/20">
+                    <div class="absolute top-4 left-4 md:top-6 md:left-6 font-mono text-[9px] text-emerald bg-emerald/10 px-3 py-1.5 rounded-full pointer-events-none flex items-center gap-2 border border-emerald/20">
                         <span class="w-1.5 h-1.5 bg-emerald rounded-full animate-pulse"></span>
                         ASSEMBLY SIMULATOR
                     </div>
 
-                    <div class="absolute top-20 left-6 right-6 md:right-auto md:w-48 bg-stone/90 backdrop-blur-md border border-ink/10 rounded-lg p-4 pointer-events-auto">
-                        <div class="text-[9px] font-mono uppercase tracking-[0.2em] text-ink/40 mb-3 border-b border-ink/10 pb-2">Deploy Sequence</div>
-                        <div class="flex flex-col gap-1">
-                            <button onclick="setAssemblyPhase(1)" id="btn-phase-1" class="game-btn active text-left text-xs font-light text-ink py-2 px-3 hover-target">1. Foundation</button>
-                            <button onclick="setAssemblyPhase(2)" id="btn-phase-2" class="game-btn text-left text-xs font-light text-ink py-2 px-3 hover-target">2. Frame</button>
-                            <button onclick="setAssemblyPhase(3)" id="btn-phase-3" class="game-btn text-left text-xs font-light text-ink py-2 px-3 hover-target">3. Envelope</button>
-                            <button onclick="setAssemblyPhase(4)" id="btn-phase-4" class="game-btn text-left text-xs font-light text-ink py-2 px-3 hover-target">4. Show Unit</button>
+                    <div class="absolute bottom-20 left-4 right-4 md:bottom-auto md:top-20 md:left-auto md:right-6 md:w-48 bg-stone/90 backdrop-blur-md border border-ink/10 rounded-lg p-2 md:p-4 pointer-events-auto z-20">
+                        <div class="text-[9px] font-mono uppercase tracking-[0.2em] text-ink/40 mb-2 border-b border-ink/10 pb-2 hidden md:block">Deploy Sequence</div>
+                        <div class="flex flex-row md:flex-col overflow-x-auto hide-scrollbar">
+                            <button onclick="setAssemblyPhase(1)" id="btn-phase-1" class="game-btn active text-center md:text-left text-[10px] md:text-xs font-medium md:font-light text-ink py-2 md:py-2 px-2 md:px-3 hover-target flex-1 md:flex-none whitespace-nowrap">1. Base</button>
+                            <button onclick="setAssemblyPhase(2)" id="btn-phase-2" class="game-btn text-center md:text-left text-[10px] md:text-xs font-medium md:font-light text-ink py-2 md:py-2 px-2 md:px-3 hover-target flex-1 md:flex-none whitespace-nowrap">2. Frame</button>
+                            <button onclick="setAssemblyPhase(3)" id="btn-phase-3" class="game-btn text-center md:text-left text-[10px] md:text-xs font-medium md:font-light text-ink py-2 md:py-2 px-2 md:px-3 hover-target flex-1 md:flex-none whitespace-nowrap">3. Shell</button>
+                            <button onclick="setAssemblyPhase(4)" id="btn-phase-4" class="game-btn text-center md:text-left text-[10px] md:text-xs font-medium md:font-light text-ink py-2 md:py-2 px-2 md:px-3 hover-target flex-1 md:flex-none whitespace-nowrap">4. Finish</button>
                         </div>
                     </div>
                     
-                    <div class="absolute bottom-6 left-6 right-6 flex justify-between items-end pointer-events-none">
-                        <div>
-                            <p class="font-mono text-[9px] text-ink/40 uppercase tracking-widest mb-1">Architecture</p>
-                            <p class="text-xs text-ink font-medium tracking-wide">Luxury Show Unit</p>
+                    <div class="absolute bottom-4 left-4 right-4 md:bottom-6 md:left-6 md:right-6 flex justify-between items-end pointer-events-none z-10">
+                        <div class="bg-stone/80 md:bg-transparent px-3 py-1.5 md:p-0 rounded border border-ink/10 md:border-none backdrop-blur-sm md:backdrop-blur-none">
+                            <p class="font-mono text-[8px] md:text-[9px] text-ink/50 md:text-ink/40 uppercase tracking-widest mb-0.5 md:mb-1">Architecture</p>
+                            <p class="text-[10px] md:text-xs text-ink font-medium tracking-wide">Luxury Show Unit</p>
                         </div>
-                        <div class="font-mono text-[9px] text-ink/50 bg-stone/80 px-3 py-1.5 backdrop-blur-sm border border-ink/10 rounded-full">
+                        <div class="font-mono text-[8px] md:text-[9px] text-ink/50 bg-stone/80 px-2 md:px-3 py-1 md:py-1.5 backdrop-blur-sm border border-ink/10 rounded-full">
                             DRAG TO EXPLORE
                         </div>
                     </div>
@@ -360,56 +385,67 @@
         </div>
     </section>
 
-    <!-- NEW: The Home I Deserve (Interactive Puzzle) -->
-    <section id="philosophy" class="min-h-[100dvh] bg-ink text-stone relative overflow-hidden flex flex-col justify-center py-32 px-6 md:px-12 lg:px-24">
-        <!-- Abstract Dark Grain Background -->
-        <div class="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=2000&q=80')] bg-cover bg-center opacity-10 mix-blend-overlay"></div>
-        
-        <div class="max-w-[100rem] mx-auto w-full relative z-10">
+    <section id="philosophy" class="min-h-[100dvh] py-32 md:py-48 px-6 md:px-12 lg:px-24 hairline-t relative bg-white overflow-hidden flex flex-col justify-center">
+        <div class="max-w-[100rem] mx-auto grid lg:grid-cols-2 gap-16 items-center relative z-10 w-full">
             
-            <div class="text-center mb-16 reveal">
+            <div class="reveal">
                 <span class="text-[10px] font-mono text-emerald uppercase tracking-[0.3em] block mb-6 font-medium">01 — The Philosophy</span>
-                <h2 class="text-4xl md:text-6xl font-light tracking-tight leading-[1.1] mb-6 text-stone" id="puzzle-headline">
-                    The industry is <span class="italic text-stone/50">fragmented.</span>
-                </h2>
-                <p class="text-stone/60 text-base md:text-lg font-light leading-relaxed max-w-2xl mx-auto" id="puzzle-subhead">
-                    Disconnected banks, weather-dependent contractors, and siloed logistics cause 540 days of delays. Tap the scattered elements below to synchronise the system.
-                </p>
+                
+                <div class="relative min-h-[180px] md:min-h-[200px]">
+                    <div id="phil-state-1" class="absolute inset-0 transition-opacity duration-700 opacity-100 flex flex-col justify-center">
+                        <h2 class="text-4xl md:text-5xl lg:text-6xl font-light tracking-tight leading-[1.1] mb-6 text-ink">
+                            The industry is <span class="italic text-ink/40">fragmented.</span>
+                        </h2>
+                        <p class="text-ink/60 text-base md:text-lg font-light leading-relaxed max-w-lg">
+                            Disconnected banks, weather-dependent contractors, and siloed logistics cause 540 days of delays. Watch the paradigm shift unfold.
+                        </p>
+                    </div>
+
+                    <div id="phil-state-2" class="absolute inset-0 transition-opacity duration-700 opacity-0 pointer-events-none flex flex-col justify-center">
+                        <h2 class="text-4xl md:text-5xl lg:text-6xl font-light tracking-tight leading-[1.1] mb-6 text-emerald">
+                            The unified <span class="italic text-ink">Shift.</span>
+                        </h2>
+                        <p class="text-ink/80 text-base md:text-lg font-medium leading-relaxed max-w-xl">
+                            By owning the financial routing and the precision manufacturing, GreenShift eliminates the delays of the past.
+                            <br><br>
+                            <span class="text-ink font-light italic opacity-80 block mt-2">The industry accepts 540 days of uncertainty. What will you build with the 495 days we save you?</span>
+                        </p>
+                    </div>
+                </div>
             </div>
 
-            <!-- The Puzzle Interface -->
-            <div class="relative w-full max-w-4xl mx-auto h-[400px] md:h-[500px] reveal delay-100">
+            <div class="relative w-full max-w-md mx-auto aspect-square reveal delay-100 flex items-center justify-center puzzle-container" id="auto-puzzle">
+                <div class="absolute inset-4 rounded-full border border-ink/5 bg-stone/30"></div>
                 
-                <!-- Central Core Target -->
-                <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 border border-dashed border-stone/20 rounded-full flex flex-col items-center justify-center transition-all duration-1000" id="puzzle-core">
-                    <div class="w-2 h-2 bg-stone/20 rounded-full mb-3" id="core-dot"></div>
-                    <span class="text-[9px] font-mono uppercase tracking-widest text-stone/30 text-center px-4" id="core-text">Awaiting Synchronization</span>
+                <div class="absolute w-32 h-32 border border-dashed border-ink/20 bg-white rounded-full flex flex-col items-center justify-center transition-all duration-1000 z-10 shadow-lg shadow-ink/5" id="puzzle-core">
+                    <div class="w-2 h-2 bg-ink/20 rounded-full mb-2 transition-colors duration-1000" id="core-dot"></div>
+                    <span class="text-[9px] font-mono uppercase tracking-widest text-ink/40 text-center px-2 transition-colors duration-1000" id="core-text">Awaiting Sync</span>
                 </div>
 
-                <!-- Puzzle Piece 1: Capital -->
-                <div class="puzzle-piece absolute top-[10%] left-[10%] md:left-[20%] w-32 h-32 md:w-40 md:h-40 border border-stone/30 bg-stone/5 backdrop-blur-md rounded-xl flex flex-col items-center justify-center hover-target hover:border-emerald hover:bg-emerald/10" id="piece-1" onclick="lockPiece(1)" style="transform: translate(-30px, -30px) rotate(-10deg);">
-                    <i data-lucide="landmark" class="w-6 h-6 text-emerald mb-3"></i>
-                    <span class="text-[10px] font-mono uppercase tracking-widest text-stone">Capital</span>
+                <div class="puzzle-piece-auto absolute top-4 left-4 md:top-8 md:left-8 w-24 h-24 border border-ink/10 bg-white shadow-xl rounded-full flex flex-col items-center justify-center text-ink/60 z-20">
+                    <i data-lucide="landmark" class="w-5 h-5 mb-1.5 text-emerald"></i>
+                    <span class="text-[8px] font-mono uppercase tracking-widest text-ink">Capital</span>
                 </div>
 
-                <!-- Puzzle Piece 2: Engineering -->
-                <div class="puzzle-piece absolute top-[10%] right-[10%] md:right-[20%] w-32 h-32 md:w-40 md:h-40 border border-stone/30 bg-stone/5 backdrop-blur-md rounded-xl flex flex-col items-center justify-center hover-target hover:border-emerald hover:bg-emerald/10" id="piece-2" onclick="lockPiece(2)" style="transform: translate(40px, -20px) rotate(15deg);">
-                    <i data-lucide="cpu" class="w-6 h-6 text-emerald mb-3"></i>
-                    <span class="text-[10px] font-mono uppercase tracking-widest text-stone">Engineering</span>
+                <div class="puzzle-piece-auto absolute top-4 right-4 md:top-8 md:right-8 w-24 h-24 border border-ink/10 bg-white shadow-xl rounded-full flex flex-col items-center justify-center text-ink/60 z-20">
+                    <i data-lucide="cpu" class="w-5 h-5 mb-1.5 text-emerald"></i>
+                    <span class="text-[8px] font-mono uppercase tracking-widest text-ink">Engineering</span>
                 </div>
 
-                <!-- Puzzle Piece 3: Assembly -->
-                <div class="puzzle-piece absolute bottom-[10%] left-1/2 -translate-x-1/2 w-32 h-32 md:w-40 md:h-40 border border-stone/30 bg-stone/5 backdrop-blur-md rounded-xl flex flex-col items-center justify-center hover-target hover:border-emerald hover:bg-emerald/10" id="piece-3" onclick="lockPiece(3)" style="transform: translate(0, 50px) rotate(-5deg);">
-                    <i data-lucide="box" class="w-6 h-6 text-emerald mb-3"></i>
-                    <span class="text-[10px] font-mono uppercase tracking-widest text-stone">Assembly</span>
+                <div class="puzzle-piece-auto absolute bottom-4 left-1/2 -translate-x-1/2 md:bottom-8 w-24 h-24 border border-ink/10 bg-white shadow-xl rounded-full flex flex-col items-center justify-center text-ink/60 z-20">
+                    <i data-lucide="box" class="w-5 h-5 mb-1.5 text-emerald"></i>
+                    <span class="text-[8px] font-mono uppercase tracking-widest text-ink">Assembly</span>
                 </div>
-
             </div>
 
         </div>
+
+        <div class="absolute bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center opacity-0 transition-opacity duration-1000" id="phil-scroll-down">
+            <span class="text-[9px] font-mono uppercase tracking-widest text-ink/40 mb-2">Explore the Ecosystem</span>
+            <div class="w-px h-12 bg-gradient-to-b from-emerald to-transparent"></div>
+        </div>
     </section>
 
-    <!-- The GreenShift Ecosystem -->
     <section id="ecosystem" class="py-32 md:py-48 px-6 md:px-12 lg:px-24 hairline-t">
         <div class="max-w-[100rem] mx-auto">
             
@@ -420,7 +456,6 @@
 
             <div class="grid lg:grid-cols-2 gap-px bg-ink/5 hairline-t hairline-b">
                 
-                <!-- The Capital -->
                 <div class="bg-stone p-10 md:p-16 lg:p-24 reveal group">
                     <div class="mb-16">
                         <h3 class="text-3xl md:text-5xl font-light text-ink mb-6">Funding Secured Upfront.</h3>
@@ -446,7 +481,6 @@
                     </ul>
                 </div>
 
-                <!-- The Construction -->
                 <div class="bg-stone p-10 md:p-16 lg:p-24 reveal delay-100 group">
                     <div class="mb-16">
                         <h3 class="text-3xl md:text-5xl font-light text-ink mb-6">Precision Indoor Building.</h3>
@@ -476,7 +510,6 @@
         </div>
     </section>
 
-    <!-- The 45-Day Timeline -->
     <section id="timeline" class="py-32 md:py-48 px-6 md:px-12 lg:px-24 bg-ink text-stone relative">
         <div class="max-w-[100rem] mx-auto">
             
@@ -492,10 +525,8 @@
                 </div>
             </div>
 
-            <!-- Minimalist Vertical Timeline -->
             <div class="relative border-l border-stone/10 ml-4 md:ml-8 space-y-24 pb-12">
                 
-                <!-- Step 1 -->
                 <div class="reveal relative pl-12 md:pl-24">
                     <div class="absolute top-2 left-0 w-8 h-px bg-stone/20"></div>
                     <div class="absolute top-0 -left-1.5 w-3 h-3 rounded-full bg-ink border border-emerald shadow-[0_0_15px_rgba(0,168,107,0.5)]"></div>
@@ -508,7 +539,6 @@
                     </div>
                 </div>
 
-                <!-- Step 2 -->
                 <div class="reveal relative pl-12 md:pl-24">
                     <div class="absolute top-2 left-0 w-8 h-px bg-stone/20"></div>
                     <div class="absolute top-0 -left-1.5 w-3 h-3 rounded-full bg-ink border border-stone/20"></div>
@@ -521,7 +551,6 @@
                     </div>
                 </div>
 
-                <!-- Step 3 -->
                 <div class="reveal relative pl-12 md:pl-24">
                     <div class="absolute top-2 left-0 w-8 h-px bg-stone/20"></div>
                     <div class="absolute top-0 -left-1.5 w-3 h-3 rounded-full bg-ink border border-stone/20"></div>
@@ -534,7 +563,6 @@
                     </div>
                 </div>
 
-                <!-- Step 4 -->
                 <div class="reveal relative pl-12 md:pl-24">
                     <div class="absolute top-2 left-0 w-8 h-px bg-emerald shadow-[0_0_10px_#00A86B]"></div>
                     <div class="absolute top-0 -left-1.5 w-3 h-3 rounded-full bg-emerald shadow-[0_0_20px_#00A86B]"></div>
@@ -551,7 +579,6 @@
         </div>
     </section>
 
-    <!-- Architectural Tiers Section -->
     <section id="tiers" class="py-32 md:py-48 px-6 md:px-12 lg:px-24 bg-white relative">
         <div class="max-w-[100rem] mx-auto">
             
@@ -567,10 +594,8 @@
                 </div>
             </div>
 
-            <!-- Tiers Grid -->
             <div class="grid md:grid-cols-2 xl:grid-cols-4 gap-6">
                 
-                <!-- Commercial / Mid-Range -->
                 <div class="reveal border border-ink/10 bg-stone p-6 cursor-pointer hover:border-emerald transition-all duration-300 hover:shadow-2xl hover:shadow-emerald/10 group" onclick="openTierModal('commercial')">
                     <div class="w-full h-48 bg-ink/5 mb-6 overflow-hidden relative rounded">
                          <img src="https://images.unsplash.com/photo-1460317442991-0ec209397118?auto=format&fit=crop&w=1000&q=80" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" alt="Commercial Architecture">
@@ -580,7 +605,6 @@
                     <p class="text-xs text-ink/60 leading-relaxed font-light">The equilibrium of architectural elegance and absolute modular efficiency.</p>
                 </div>
 
-                <!-- Premium / Luxury -->
                 <div class="reveal delay-100 border border-ink/10 bg-stone p-6 cursor-pointer hover:border-emerald transition-all duration-300 hover:shadow-2xl hover:shadow-emerald/10 group" onclick="openTierModal('premium')">
                     <div class="w-full h-48 bg-ink/5 mb-6 overflow-hidden relative rounded">
                          <img src="https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1000&q=80" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" alt="Premium Mansion">
@@ -590,7 +614,6 @@
                     <p class="text-xs text-ink/60 leading-relaxed font-light">Uncompromising luxury built with precision for high-end real estate portfolios.</p>
                 </div>
 
-                <!-- Bespoke / Avant-Garde -->
                 <div class="reveal delay-200 border border-ink/10 bg-stone p-6 cursor-pointer hover:border-emerald transition-all duration-300 hover:shadow-2xl hover:shadow-emerald/10 group" onclick="openTierModal('bespoke')">
                     <div class="w-full h-48 bg-ink/5 mb-6 overflow-hidden relative rounded">
                          <img src="https://images.unsplash.com/photo-1600607686527-6fb886090705?auto=format&fit=crop&w=1000&q=80" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" alt="Avant-Garde Architecture">
@@ -600,7 +623,6 @@
                     <p class="text-xs text-ink/60 leading-relaxed font-light">Complex hybrid engineering for visionary, limit-testing structural concepts.</p>
                 </div>
 
-                <!-- Retrofit / Adaptive Reuse -->
                 <div class="reveal delay-300 border border-ink/10 bg-stone p-6 cursor-pointer hover:border-emerald transition-all duration-300 hover:shadow-2xl hover:shadow-emerald/10 group" onclick="openTierModal('retrofit')">
                     <div class="w-full h-48 bg-ink/5 mb-6 overflow-hidden relative rounded">
                          <img src="https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=1000&q=80" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" alt="Retrofit Workspace">
@@ -613,7 +635,6 @@
         </div>
     </section>
 
-    <!-- NEW: Initiation Modality (Time is Capital Game + CTA) -->
     <section id="initiate" class="py-32 md:py-48 px-6 md:px-12 lg:px-24 hairline-t relative overflow-hidden bg-stone">
         <div class="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=2000&q=80')] bg-cover bg-center opacity-20 mix-blend-multiply"></div>
         <div class="absolute inset-0 bg-gradient-to-b from-transparent to-stone/90"></div>
@@ -632,7 +653,6 @@
                 </button>
             </div>
 
-            <!-- "Time is Capital" Interactive Hook -->
             <div class="reveal delay-100 bg-white/80 backdrop-blur-xl border border-ink/10 p-8 md:p-12 shadow-2xl rounded-2xl">
                 <div class="flex items-center justify-between mb-8">
                     <h3 class="text-2xl font-light text-ink">Time is Capital.</h3>
@@ -665,20 +685,15 @@
         </div>
     </section>
 
-    <!-- Dynamic Project Tiers Modal -->
     <div id="tier-modal" class="fixed inset-0 z-[100000] hidden items-center justify-center px-4 md:px-8 py-8 no-select opacity-0 transition-opacity duration-500">
-        <!-- Backdrop -->
         <div class="absolute inset-0 bg-ink/80 backdrop-blur-md cursor-pointer" onclick="closeTierModal()"></div>
         
-        <!-- Modal Card -->
         <div class="relative w-full max-w-6xl h-full max-h-[800px] bg-white border border-ink/10 shadow-2xl rounded-xl overflow-y-auto md:overflow-hidden transform scale-95 transition-transform duration-500 flex flex-col md:flex-row" id="tier-card">
             
-            <!-- Left: Hero Image -->
             <div class="w-full md:w-1/2 h-64 md:h-full relative bg-stone shrink-0">
                 <img id="tier-img" src="" class="w-full h-full object-cover">
             </div>
             
-            <!-- Right: Content -->
             <div class="w-full md:w-1/2 p-8 md:p-14 lg:p-16 relative flex flex-col justify-center bg-white overflow-y-auto">
                 <button onclick="closeTierModal()" class="absolute top-6 right-6 text-ink/30 hover:text-ink transition-colors hover-target p-2 bg-stone rounded-full">
                     <i data-lucide="x" class="w-5 h-5"></i>
@@ -708,10 +723,8 @@
         </div>
     </div>
 
-    <!-- Concierge Modal -->
     <div id="initiation-modal" class="fixed inset-0 z-[100000] hidden flex-col bg-stone overflow-y-auto opacity-0 transition-opacity duration-500">
         
-        <!-- Header -->
         <div class="sticky top-0 w-full px-6 py-6 border-b border-ink/5 bg-stone/90 backdrop-blur-md z-20 flex justify-between items-center">
             <div class="flex items-center gap-3">
                 <div class="w-3 h-3 bg-emerald shadow-[0_0_10px_#00A86B]"></div>
@@ -722,18 +735,15 @@
             </button>
         </div>
 
-        <!-- Body -->
         <div class="flex-grow flex flex-col justify-center items-center px-6 py-12">
             <div class="w-full max-w-3xl relative">
                 
-                <!-- Step Progress -->
                 <div class="flex gap-2 mb-12">
                     <div class="h-1 flex-1 bg-emerald rounded transition-all" id="prog-1"></div>
                     <div class="h-1 flex-1 bg-ink/10 rounded transition-all" id="prog-2"></div>
                     <div class="h-1 flex-1 bg-ink/10 rounded transition-all" id="prog-3"></div>
                 </div>
 
-                <!-- Step 1: Identify -->
                 <div class="step-pane active" id="step-1">
                     <h2 class="text-4xl md:text-5xl font-light tracking-tight text-ink mb-4">Welcome. How can we help you build?</h2>
                     <p class="text-ink/50 mb-10 font-light text-lg">Select an option below so we can tailor your experience.</p>
@@ -757,7 +767,6 @@
                     </div>
                 </div>
 
-                <!-- Step 2: Location -->
                 <div class="step-pane" id="step-2">
                     <button onclick="goToStep(1)" class="text-[10px] font-mono uppercase tracking-[0.2em] text-ink/40 hover:text-ink mb-8 flex items-center gap-2 hover-target"><i data-lucide="arrow-left" class="w-3 h-3"></i> Back</button>
                     <h2 class="text-4xl md:text-5xl font-light tracking-tight text-ink mb-4">Where are you looking to build?</h2>
@@ -770,7 +779,6 @@
                     <button onclick="goToStep(3)" class="bg-ink text-white px-8 py-4 text-xs font-bold uppercase tracking-[0.2em] hover:bg-emerald transition-colors hover-target">Confirm Location</button>
                 </div>
 
-                <!-- Step 3: Details -->
                 <div class="step-pane" id="step-3">
                     <button onclick="goToStep(2)" class="text-[10px] font-mono uppercase tracking-[0.2em] text-ink/40 hover:text-ink mb-8 flex items-center gap-2 hover-target"><i data-lucide="arrow-left" class="w-3 h-3"></i> Back</button>
                     <h2 class="text-4xl md:text-5xl font-light tracking-tight text-ink mb-4">Let's get to know you.</h2>
@@ -788,7 +796,6 @@
                     </form>
                 </div>
 
-                <!-- Step 4: Success -->
                 <div class="step-pane text-center py-12" id="step-4">
                     <div class="w-20 h-20 bg-emerald/10 rounded-full flex items-center justify-center mx-auto mb-8 shadow-[0_0_30px_rgba(0,168,107,0.3)]">
                         <i data-lucide="check" class="w-10 h-10 text-emerald"></i>
@@ -802,7 +809,6 @@
         </div>
     </div>
 
-    <!-- Studio Footer -->
     <footer class="py-12 px-6 md:px-12 lg:px-24 bg-stone hairline-t">
         <div class="max-w-[100rem] mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
             <div class="flex gap-8 text-[10px] font-mono uppercase tracking-[0.2em] text-ink/40">
@@ -810,8 +816,16 @@
                 <a href="#" class="hover:text-ink transition-colors hover-target">Terms</a>
             </div>
             <div class="flex items-center gap-4">
-                <div class="text-[10px] font-mono uppercase tracking-[0.2em] text-ink/40 text-center md:text-right">
-                    &copy; GreenShift. All Rights Reserved.
+                <div class="text-[10px] font-mono uppercase tracking-[0.2em] text-ink/50 flex flex-col md:flex-row items-center justify-center gap-4">
+                    <span>&copy; 2026 GREENSHIFT BY</span>
+                    <svg viewBox="0 0 450 120" fill="none" xmlns="http://www.w3.org/2000/svg" class="h-4 md:h-5 w-auto opacity-80">
+                        <path d="M10 60 L100 15 L180 50 L155 65 L100 35 L40 65 Z" fill="#4AD9AA"/>
+                        <path d="M55 75 L100 50 L125 90 L165 70 L120 115 Z" fill="#3E8678"/>
+                        <text x="200" y="60" font-family="'Inter', sans-serif" font-weight="900" font-size="60" fill="#4AD9AA" letter-spacing="1">FJÄLL</text>
+                        <text x="205" y="110" font-family="'Inter', sans-serif" font-weight="300" font-size="52" fill="#3E8678" letter-spacing="1">GROUP</text>
+                    </svg>
+                    <span class="hidden md:inline text-ink/20">|</span> 
+                    <span>ALL RIGHTS RESERVED.</span>
                 </div>
             </div>
         </div>
@@ -1018,7 +1032,7 @@
                 if (markersContainer) {
                     markerElements.forEach(marker => {
                         if (assemblyTargets.finish > 1) {
-                            marker.el.style.opacity = 0;
+                            if(marker.el) marker.el.style.opacity = 0;
                             return;
                         }
 
@@ -1027,12 +1041,14 @@
                         pos.project(camera);
 
                         if (pos.z > 1) {
-                            marker.el.style.opacity = 0;
+                            if(marker.el) marker.el.style.opacity = 0;
                         } else {
                             const x = (pos.x * .5 + .5) * container.clientWidth;
                             const y = (pos.y * -.5 + .5) * container.clientHeight;
-                            marker.el.style.transform = `translate(-50%, -100%) translate(${x}px, ${y - 15}px)`;
-                            marker.el.style.opacity = 1;
+                            if(marker.el) {
+                                marker.el.style.transform = `translate(-50%, -100%) translate(${x}px, ${y - 15}px)`;
+                                marker.el.style.opacity = 1;
+                            }
                         }
                     });
                 }
@@ -1040,48 +1056,44 @@
             animate();
         };
 
-        // --- 2. Interactive Puzzle Logic ---
-        let lockedPieces = 0;
-        window.lockPiece = (num) => {
-            const piece = safeId(`piece-${num}`);
-            if(!piece || piece.classList.contains('locked')) return;
-            
-            piece.classList.add('locked');
-            lockedPieces++;
-            
-            if(lockedPieces === 3) {
-                // Puzzle Complete!
-                setTimeout(() => {
-                    // Hide original text and core
-                    safeId('puzzle-headline').innerHTML = `The unified <span class="italic text-emerald">Shift.</span>`;
-                    safeId('puzzle-subhead').innerText = "By owning the financial routing and the precision manufacturing, GreenShift eliminates the delays of the past. The home you deserve, delivered in 45 days.";
-                    
-                    const core = safeId('puzzle-core');
-                    core.classList.remove('border-stone/20');
-                    core.classList.add('border-emerald', 'bg-emerald/5', 'core-pulse');
-                    safeId('core-dot').classList.add('bg-emerald');
-                    safeId('core-text').innerText = "System Unified";
-                    safeId('core-text').classList.add('text-emerald');
-                    
-                    // Fade out pieces to keep it clean
-                    [1,2,3].forEach(i => {
-                        safeId(`piece-${i}`).style.opacity = 0;
-                    });
-                }, 800);
-            }
-        };
+        // --- 2. Automated Interactive Puzzle Animation Logic ---
+        const philObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    setTimeout(() => {
+                        const puzzle = safeId('auto-puzzle');
+                        const s1 = safeId('phil-state-1');
+                        const s2 = safeId('phil-state-2');
+                        const scrollDown = safeId('phil-scroll-down');
+                        
+                        if(puzzle) puzzle.classList.add('assembled');
+                        
+                        setTimeout(() => {
+                            if(s1) { s1.classList.remove('opacity-100'); s1.classList.add('opacity-0'); }
+                            if(s2) { s2.classList.remove('opacity-0', 'pointer-events-none'); s2.classList.add('opacity-100'); }
+                            if(safeId('core-text')) {
+                                safeId('core-text').innerText = 'System Unified';
+                            }
+                            if(scrollDown) scrollDown.classList.remove('opacity-0');
+                        }, 1200); 
+                        
+                    }, 1000);
+                    philObserver.unobserve(entry.target);
+                }
+            });
+        }, { threshold: 0.5 }); 
+
+        const philSec = safeId('philosophy');
+        if(philSec) philObserver.observe(philSec);
 
         // --- 3. Interactive ROI Slider Game ---
         window.updateCalculator = (sqm) => {
-            safeId('scope-output').innerText = `${Number(sqm).toLocaleString()} SQM`;
-            // Math for generic demonstration:
-            // Traditional: 540 days base + 1 day per 10 sqm
-            // GS: 45 days base + 1 day per 100 sqm
+            if(safeId('scope-output')) safeId('scope-output').innerText = `${Number(sqm).toLocaleString()} SQM`;
             let tradDays = 540 + Math.floor(sqm / 10);
             let gsDays = 45 + Math.floor(sqm / 100);
             
-            safeId('trad-time').innerText = `${tradDays} Days`;
-            safeId('gs-time').innerText = `${gsDays} Days`;
+            if(safeId('trad-time')) safeId('trad-time').innerText = `${tradDays} Days`;
+            if(safeId('gs-time')) safeId('gs-time').innerText = `${gsDays} Days`;
         }
 
         // --- 4. Project Tiers Modal Data & Logic ---
@@ -1128,24 +1140,28 @@
             const data = projectTiersData[tierKey];
             if (!data) return;
 
-            safeId('tier-img').src = data.image;
-            safeId('tier-title').innerText = data.title;
-            safeId('tier-subtitle').innerText = data.subtitle;
-            safeId('tier-desc').innerText = data.desc;
-            safeId('tier-structural').innerText = data.structural;
-            safeId('tier-range').innerText = data.range;
-            safeId('tier-target').innerText = data.target;
+            if(safeId('tier-img')) safeId('tier-img').src = data.image;
+            if(safeId('tier-title')) safeId('tier-title').innerText = data.title;
+            if(safeId('tier-subtitle')) safeId('tier-subtitle').innerText = data.subtitle;
+            if(safeId('tier-desc')) safeId('tier-desc').innerText = data.desc;
+            if(safeId('tier-structural')) safeId('tier-structural').innerText = data.structural;
+            if(safeId('tier-range')) safeId('tier-range').innerText = data.range;
+            if(safeId('tier-target')) safeId('tier-target').innerText = data.target;
 
             const modal = safeId('tier-modal');
             const card = safeId('tier-card');
             
-            modal.classList.remove('hidden');
-            modal.classList.add('flex');
+            if(modal) {
+                modal.classList.remove('hidden');
+                modal.classList.add('flex');
+            }
             
             setTimeout(() => {
-                modal.classList.remove('opacity-0');
-                card.classList.remove('scale-95');
-                card.classList.add('scale-100');
+                if(modal) modal.classList.remove('opacity-0');
+                if(card) {
+                    card.classList.remove('scale-95');
+                    card.classList.add('scale-100');
+                }
             }, 10);
             document.body.style.overflow = 'hidden';
         }
@@ -1154,13 +1170,17 @@
             const modal = safeId('tier-modal');
             const card = safeId('tier-card');
             
-            modal.classList.add('opacity-0');
-            card.classList.remove('scale-100');
-            card.classList.add('scale-95');
+            if(modal) modal.classList.add('opacity-0');
+            if(card) {
+                card.classList.remove('scale-100');
+                card.classList.add('scale-95');
+            }
             
             setTimeout(() => {
-                modal.classList.add('hidden');
-                modal.classList.remove('flex');
+                if(modal) {
+                    modal.classList.add('hidden');
+                    modal.classList.remove('flex');
+                }
                 document.body.style.overflow = '';
             }, 500); 
         }
@@ -1206,10 +1226,10 @@
             protocolForm.addEventListener('submit', (e) => {
                 e.preventDefault();
                 
-                const location = safeId('site-location').value;
-                const name = safeId('pf-name').value;
-                const email = safeId('pf-email').value;
-                const phone = safeId('pf-phone').value;
+                const location = safeId('site-location') ? safeId('site-location').value : '';
+                const name = safeId('pf-name') ? safeId('pf-name').value : '';
+                const email = safeId('pf-email') ? safeId('pf-email').value : '';
+                const phone = safeId('pf-phone') ? safeId('pf-phone').value : '';
 
                 // WhatsApp Routing
                 const text = `Hello GreenShift Concierge, I'd like to request my 45-day plan.%0A%0A*Name:* ${name}%0A*Email:* ${email}%0A*Phone:* ${phone}%0A*Location:* ${location}%0A*Intent:* ${selectedIntent}`;
@@ -1226,50 +1246,61 @@
             const preloader = safeId('preloader');
             const preloaderNumbers = safeId('preloader-numbers');
             const preloaderThought = safeId('preloader-thought');
+            const preloaderLogo = safeId('preloader-logo');
+            const shineElement = safeId('shine-element');
             const obLeft = safeId('ob-left');
             const obRight = safeId('ob-right');
             const oNum1 = safeId('o-num1');
             const oNum2 = safeId('o-num2');
             
-            if (preloader && obLeft && obRight && oNum1 && oNum2 && preloaderThought && preloaderNumbers) {
-                // Step 1: Crush 540
+            if (preloader && obLeft && obRight && oNum1 && oNum2 && preloaderThought && preloaderNumbers && preloaderLogo) {
                 setTimeout(() => {
-                    obLeft.classList.add('ob-crush'); obRight.classList.add('ob-crush'); oNum1.classList.add('opacity-0');
+                    if(obLeft) obLeft.classList.add('ob-crush'); 
+                    if(obRight) obRight.classList.add('ob-crush'); 
+                    if(oNum1) oNum1.classList.add('opacity-0');
                 }, 800);
-                // Step 2: Show 45
                 setTimeout(() => {
-                    obLeft.classList.remove('ob-crush'); obRight.classList.remove('ob-crush');
-                    obLeft.classList.add('ob-open'); obRight.classList.add('ob-open');
-                    oNum2.classList.remove('opacity-0');
+                    if(obLeft) obLeft.classList.remove('ob-crush'); 
+                    if(obRight) obRight.classList.remove('ob-crush');
+                    if(obLeft) obLeft.classList.add('ob-open'); 
+                    if(obRight) obRight.classList.add('ob-open');
+                    if(oNum2) oNum2.classList.remove('opacity-0');
                 }, 1400);
-                // Step 3: Fade numbers, show Thought Question
                 setTimeout(() => {
-                    preloaderNumbers.classList.add('opacity-0');
+                    if(preloaderNumbers) preloaderNumbers.classList.add('opacity-0');
                     setTimeout(() => {
-                        preloaderThought.classList.remove('opacity-0');
+                        if(preloaderThought) preloaderThought.classList.remove('opacity-0');
                     }, 400);
                 }, 2400);
-                // Step 4: Shift up the whole preloader
                 setTimeout(() => {
-                    preloader.classList.add('shift-up'); document.body.style.overflow = ''; 
-                }, 5200); 
-                // Clean up
-                setTimeout(() => { preloader.remove(); }, 6500);
+                    if(preloaderThought) preloaderThought.classList.add('opacity-0');
+                    setTimeout(() => {
+                        if(preloaderLogo) preloaderLogo.classList.remove('opacity-0');
+                        setTimeout(() => {
+                            if(shineElement) shineElement.classList.add('animate-shine');
+                        }, 600);
+                    }, 800);
+                }, 4500);
+                setTimeout(() => {
+                    if(preloader) preloader.classList.add('shift-up'); 
+                    document.body.style.overflow = ''; 
+                }, 7500); 
+                setTimeout(() => { 
+                    if(preloader) preloader.remove(); 
+                }, 9000);
             } else {
                 document.body.style.overflow = '';
             }
         });
 
-        // Scroll Reveal
         const observerOptions = { root: null, rootMargin: '0px', threshold: 0.1 };
-        const observer = new IntersectionObserver((entries) => {
+        const revealObserver = new IntersectionObserver((entries) => {
             entries.forEach(entry => {
                 if (entry.isIntersecting) entry.target.classList.add('active');
             });
         }, observerOptions);
-        document.querySelectorAll('.reveal').forEach((el) => observer.observe(el));
+        document.querySelectorAll('.reveal').forEach((el) => revealObserver.observe(el));
 
-        // Scroll Progress & Navbar
         window.addEventListener('scroll', () => {
             const navbar = safeId('navbar');
             const scrollProgress = safeId('scroll-progress');
@@ -1289,7 +1320,6 @@
             }
         });
 
-        // Smooth Scroll
         document.querySelectorAll('a[href^="#"]').forEach(anchor => {
             anchor.addEventListener('click', function (e) {
                 e.preventDefault();
@@ -1300,7 +1330,6 @@
             });
         });
 
-        // Magnetic Cursor (Desktop)
         if (window.matchMedia("(pointer: fine)").matches) {
             const cursorDot = safeId('cursor-dot');
             const cursorRing = safeId('cursor-ring');
@@ -1311,19 +1340,19 @@
 
                 window.addEventListener('mousemove', (e) => {
                     mouseX = e.clientX; mouseY = e.clientY;
-                    cursorDot.style.transform = `translate(calc(${mouseX}px - 50%), calc(${mouseY}px - 50%))`;
+                    if(cursorDot) cursorDot.style.transform = `translate(calc(${mouseX}px - 50%), calc(${mouseY}px - 50%))`;
                 });
 
                 const render = () => {
                     ringX += (mouseX - ringX) * 0.15;
                     ringY += (mouseY - ringY) * 0.15;
-                    cursorRing.style.transform = `translate(calc(${ringX}px - 50%), calc(${ringY}px - 50%))`;
+                    if(cursorRing) cursorRing.style.transform = `translate(calc(${ringX}px - 50%), calc(${ringY}px - 50%))`;
                     requestAnimationFrame(render);
                 };
                 requestAnimationFrame(render);
 
                 const attachCursorEvents = () => {
-                    document.querySelectorAll('a, button, select, .hover-target, #webgl-container, .puzzle-piece').forEach(el => {
+                    document.querySelectorAll('a, button, select, .hover-target, #webgl-container, .puzzle-piece-auto').forEach(el => {
                         el.addEventListener('mouseenter', () => document.body.classList.add('cursor-hover'));
                         el.addEventListener('mouseleave', () => document.body.classList.remove('cursor-hover'));
                     });
